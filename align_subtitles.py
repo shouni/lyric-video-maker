@@ -2,11 +2,13 @@
 """音声からカラオケタイミングを取得し、ASS字幕を再生成する。
 
 Usage:
-    python3 align_subtitles.py <audio.mp3> <subtitles.ass> [output.ass]
+    python3 align_subtitles.py <audio.mp3> <keyframes.zip|subtitles.ass> [output.ass]
 """
 
 import re
 import sys
+import io
+import zipfile
 import argparse
 import stable_whisper
 import pysubs2
@@ -42,17 +44,21 @@ def ms(sec):
 def main():
     parser = argparse.ArgumentParser(description="音声からカラオケタイミングを取得し、ASS字幕を再生成する。")
     parser.add_argument("audio", help="Input audio file (mp3)")
-    parser.add_argument("subtitles_in", help="Input subtitles file (ass)")
+    parser.add_argument("subtitles_in", help="Input keyframes ZIP or subtitles ASS file")
     parser.add_argument("subtitles_out", nargs="?", default="subtitles_aligned.ass", help="Output subtitles file (ass)")
     parser.add_argument("--model", default="large-v3", help="Whisper model size (e.g., base, small, medium, large-v3)")
     args = parser.parse_args()
 
     audio = args.audio
-    ass_in = args.subtitles_in
     ass_out = args.subtitles_out
 
-    # --- 元のASS読み込み ---
-    subs_orig = pysubs2.load(ass_in)
+    # --- 元のASS読み込み（ZIP または ASS ファイルを受け付ける）---
+    if args.subtitles_in.endswith(".zip"):
+        with zipfile.ZipFile(args.subtitles_in) as zf:
+            with zf.open("subtitles.ass") as f:
+                subs_orig = pysubs2.SSAFile.from_string(f.read().decode("utf-8"))
+    else:
+        subs_orig = pysubs2.load(args.subtitles_in)
     orig_events = []
     for event in subs_orig:
         plain = re.sub(r'\{[^}]*\}', '', event.text).strip()
