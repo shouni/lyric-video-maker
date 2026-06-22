@@ -66,10 +66,10 @@ def main():
     model = stable_whisper.load_model(args.model)
 
     print("アライメント実行中...")
-    result = model.align(audio, text_to_align, language="ja", vad=True)
+    result = model.align(audio, text_to_align, language="ja")
 
-    print("タイムスタンプ精緻化中...")
-    result = result.refine(audio)
+    # adjust_by_silence は音楽トラックでは逆効果になるため一旦無効化
+    # result = result.adjust_by_silence(audio, vad=True)
 
     # --- 文字レベルのタイムスタンプを収集 ---
     # 複数文字トークンは時間を等分配
