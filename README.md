@@ -13,7 +13,7 @@
 
 ```
 ① align_subtitles.py
-   audio.mp3 + 歌詞入り ASS  →  カラオケタイミング付き ASS（\k タグ）
+   audio.mp3 + keyframes.zip  →  カラオケタイミング付き ASS（\k タグ）
 
 ② burn_subs.py
    audio.mp3 + keyframes.zip (+ ASS)  →  output.mp4（カラオケ字幕付き）
@@ -28,13 +28,13 @@
 ### 🎤 Whisper による文字レベル自動アライメント（align_subtitles.py）
 
 - [stable-ts](https://github.com/jianfch/stable-ts) を使って Whisper の推論結果を文字レベルに分解します。
-- 元の ASS から歌詞テキストだけを抽出して Whisper にアライメントさせ、句読点・記号は直前の文字の `\k` に吸収させます。
+- ZIP 内の ASS から歌詞テキストだけを抽出して Whisper にアライメントさせ、句読点・記号は直前の文字の `\k` に吸収させます。
 - 出力は pysubs2 互換の ASS ファイルで、スタイル情報は元ファイルから引き継ぎます。
 
 ### 🎤 ASS カラオケ字幕の完全再現（burn_subs.py）
 
 - `\k` タグを解析し、文字単位でハイライト色（黄）と待機色（白）を切り替えます。
-- 16 行・文字ごとの遷移タイミングをすべて算出し、状態が変わるフレームのみを描画します。
+- 文字ごとの遷移タイミングをすべて算出し、状態が変わるフレームのみを描画します。
 
 ### ⚡ 差分描画による高速処理
 
@@ -67,50 +67,40 @@ pip install -r requirements.txt
 
 ---
 
-### ① カラオケタイミングの自動生成（align_subtitles.py）
+### 実行（コピペ用）
 
-歌詞テキストを含む ASS ファイルから、Whisper を使って文字レベルのカラオケタイミングを自動生成します。
-
-```sh
-python3 align_subtitles.py <audio.mp3> <subtitles.ass> [output.ass] [--model <size>]
-```
-
-**例:**
+**精度重視（Whisper アライメントあり）:**
 
 ```sh
-python3 align_subtitles.py audio.mp3 lyrics.ass subtitles_aligned.ass --model medium
+# ① タイミング生成
+python3 align_subtitles.py input/audio.mp3 input/keyframes.zip input/subtitles_aligned.ass
+
+# ② 動画生成
+python3 burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4 --subs input/subtitles_aligned.ass
 ```
 
-**引数:**
+**簡易版（ZIP 内の ASS タイミングをそのまま使う）:**
+
+```sh
+python3 burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4
+```
+
+---
+
+## ⚙️ 引数
+
+### align_subtitles.py
 
 | 引数 | 必須 | 説明 |
 | --- | --- | --- |
 | `audio.mp3` | ✅ | アライメント対象の音声ファイル |
-| `subtitles.ass` | ✅ | 歌詞テキストを含む入力 ASS ファイル |
+| `keyframes.zip` または `subtitles.ass` | ✅ | ZIP を渡すと内部の `subtitles.ass` を自動抽出。ASS ファイルを直接渡すことも可 |
 | `output.ass` | ➖ | 出力 ASS ファイル名（省略時: `subtitles_aligned.ass`）|
 | `--model` | ➖ | Whisper モデルサイズ（`base` / `small` / `medium` / `large-v3`、省略時: `large-v3`）|
 
 **注意:** 入力 ASS の歌詞行数と Whisper が検出した文字数が一致しない場合はエラーで停止します。その場合は歌詞テキストの表記（スペース・句読点）を Whisper の出力に合わせて調整してください。
 
----
-
-### ② 字幕焼き込み動画の生成（burn_subs.py）
-
-タイミング付き ASS と ZIP キーフレームから MP4 を生成します。
-
-```sh
-python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4] [--subs <subtitles.ass>]
-```
-
-**例:**
-
-```sh
-python3 burn_subs.py audio.mp3 keyframes-video-recipe.zip output.mp4
-# ZIP 内の subtitles.ass を上書きする場合
-python3 burn_subs.py audio.mp3 keyframes-video-recipe.zip output.mp4 --subs subtitles_aligned.ass
-```
-
-**引数:**
+### burn_subs.py
 
 | 引数 | 必須 | 説明 |
 | --- | --- | --- |
@@ -144,7 +134,7 @@ duration 50.000
 
 ---
 
-## 🎨 字幕レンダリングの仕組み（burn_subs.py）
+## 🎨 字幕レンダリングの仕組み
 
 1. `subtitles.ass` から `\k` タグを解析してカラオケ遷移タイミングをリストアップ
 2. タイミングの変わり目ごとに PIL で画像にテキストを描画（アウトライン付き）
