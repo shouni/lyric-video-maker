@@ -76,6 +76,7 @@ python3 burn_subs.py audio.mp3 keyframes-video-recipe.zip output.mp4
 | `audio.mp3` | ✅ | BGM として使用する音声ファイル |
 | `keyframes.zip` | ✅ | PNG 画像・`inputs.txt`・`subtitles.ass` を含む ZIP |
 | `output.mp4` | ➖ | 出力ファイル名（省略時: `output.mp4`）|
+| `--subs <subtitles.ass>` | ➖ | ZIP 内の字幕を上書きする ASS ファイル |
 
 ---
 

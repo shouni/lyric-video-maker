@@ -8,6 +8,7 @@ Usage:
 import re
 import os
 import sys
+import argparse
 import zipfile
 import subprocess
 import tempfile
@@ -15,25 +16,17 @@ from PIL import Image, ImageDraw, ImageFont
 import pysubs2
 
 # --- Args ---
-if len(sys.argv) < 3:
-    print("Usage: python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4] [--subs <subtitles.ass>]")
-    sys.exit(1)
+parser = argparse.ArgumentParser(description="Burn ASS karaoke subtitles onto PNG images and create MP4.")
+parser.add_argument("audio", help="Input audio file (mp3)")
+parser.add_argument("keyframes", help="Input keyframes zip file")
+parser.add_argument("output", nargs="?", default="output.mp4", help="Output MP4 file")
+parser.add_argument("--subs", dest="subs_override", help="Override subtitles file (ass)")
+args = parser.parse_args()
 
-AUDIO = sys.argv[1]
-ZIP_FILE = sys.argv[2]
-
-# --subs オプションで字幕ファイルを上書き可能
-_args = sys.argv[3:]
-SUBS_OVERRIDE = None
-OUTPUT = "output.mp4"
-i = 0
-while i < len(_args):
-    if _args[i] == "--subs" and i + 1 < len(_args):
-        SUBS_OVERRIDE = _args[i + 1]
-        i += 2
-    else:
-        OUTPUT = _args[i]
-        i += 1
+AUDIO = args.audio
+ZIP_FILE = args.keyframes
+OUTPUT = args.output
+SUBS_OVERRIDE = args.subs_override
 FRAMES_DIR = "frames_tmp"
 
 # --- Extract zip ---

@@ -7,36 +7,17 @@ Usage:
 
 import re
 import sys
+import argparse
 import stable_whisper
 import pysubs2
 
-if len(sys.argv) < 3:
-    print("Usage: python3 align_subtitles.py <audio.mp3> <subtitles.ass> [output.ass]")
-    sys.exit(1)
+PUNCT_PATTERN = re.compile(r'[　 、。！？!?,.\s]')
 
-AUDIO = sys.argv[1]
-ASS_IN = sys.argv[2]
-ASS_OUT = sys.argv[3] if len(sys.argv) > 3 else "subtitles_aligned.ass"
 
-# --- 元のASS読み込み ---
-subs_orig = pysubs2.load(ASS_IN)
-orig_events = []
-for event in subs_orig:
-    plain = re.sub(r'\{[^}]*\}', '', event.text).strip()
-    if plain:
-        orig_events.append(plain)
+def strip_punct(s):
+    return PUNCT_PATTERN.sub('', s)
 
-text_to_align = "\n".join(orig_events)
 
-# --- アライメント実行 ---
-print("Whisperモデル読み込み中...")
-model = stable_whisper.load_model("medium")
-
-print("アライメント実行中...")
-result = model.align(AUDIO, text_to_align, language="ja")
-
-# --- 文字レベルのタイムスタンプを収集 ---
-# 複数文字トークンは時間を等分配
 def words_to_chars(segments):
     chars = []
     for seg in segments:
@@ -56,95 +37,129 @@ def words_to_chars(segments):
                 })
     return chars
 
-all_chars = words_to_chars(result.segments)
-print(f"取得文字数: {len(all_chars)}")
-
-# --- 元の字幕行の文字と照合 ---
-# 句読点・スペース・記号を除いてマッチング
-def strip_punct(s):
-    return re.sub(r'[　 、。！？!?,.\s]', '', s)
-
-# 全文字を句読点なしフラットリスト化
-flat_orig = []
-for line_idx, line in enumerate(orig_events):
-    for ch in line:
-        if re.match(r'[　 、。！？!?,.\s]', ch):
-            continue
-        flat_orig.append({"line": line_idx, "char": ch})
-
-flat_whisper = [c for c in all_chars if re.match(r'[　 、。！？!?,.\s]', c["char"]) is None]
-
-# 最小長でアライメント
-n = min(len(flat_orig), len(flat_whisper))
-print(f"照合文字数: orig={len(flat_orig)}, whisper={len(flat_whisper)}, 使用={n}")
-
-# 各行の開始・終了インデックスを記録
-line_char_map = {}  # line_idx -> [char_timing, ...]
-for i in range(n):
-    li = flat_orig[i]["line"]
-    if li not in line_char_map:
-        line_char_map[li] = []
-    line_char_map[li].append(flat_whisper[i])
-
-# --- 新しいASSイベントを生成 ---
-new_subs = pysubs2.SSAFile()
-new_subs.info = subs_orig.info.copy()
-new_subs.styles = subs_orig.styles.copy()
-
-orig_event_list = [e for e in subs_orig if re.sub(r'\{[^}]*\}', '', e.text).strip()]
 
 def ms(sec):
     return int(sec * 1000)
 
-TAIL_MS = 300  # 最終文字後の表示延長
 
-for line_idx, event in enumerate(orig_event_list):
-    plain = re.sub(r'\{[^}]*\}', '', event.text).strip()
-    char_timings = line_char_map.get(line_idx)
+def main():
+    parser = argparse.ArgumentParser(description="音声からカラオケタイミングを取得し、ASS字幕を再生成する。")
+    parser.add_argument("audio", help="Input audio file (mp3)")
+    parser.add_argument("subtitles_in", help="Input subtitles file (ass)")
+    parser.add_argument("subtitles_out", nargs="?", default="subtitles_aligned.ass", help="Output subtitles file (ass)")
+    args = parser.parse_args()
 
-    if not char_timings:
-        # タイミング取得できなかった行はそのまま保持
-        new_subs.append(event.copy())
-        continue
+    AUDIO = args.audio
+    ASS_IN = args.subtitles_in
+    ASS_OUT = args.subtitles_out
 
-    line_start_s = char_timings[0]["start"]
-    line_end_s   = char_timings[-1]["end"] + TAIL_MS / 1000
+    # --- 元のASS読み込み ---
+    subs_orig = pysubs2.load(ASS_IN)
+    orig_events = []
+    for event in subs_orig:
+        plain = re.sub(r'\{[^}]*\}', '', event.text).strip()
+        if plain:
+            orig_events.append(plain)
 
-    # 元の行の文字（句読点含む）に \k を割り当て
-    # 句読点はその前の文字の \k に吸収させる
-    timing_queue = list(char_timings)
-    k_parts = []
-    ti = 0
+    text_to_align = "\n".join(orig_events)
 
-    for ch in plain:
-        is_punct = bool(re.match(r'[　 、。！？!?,.\s]', ch))
-        if is_punct:
-            # 句読点は直前の \k に時間を加算（または 0cs でスキップ）
-            if k_parts:
-                # 句読点分の時間を直前のセグメントに加算するためにそのままスルー
-                k_parts[-1]["text"] += ch
+    # --- アライメント実行 ---
+    print("Whisperモデル読み込み中...")
+    model = stable_whisper.load_model("medium")
+
+    print("アライメント実行中...")
+    result = model.align(AUDIO, text_to_align, language="ja")
+
+    # --- 文字レベルのタイムスタンプを収集 ---
+    # 複数文字トークンは時間を等分配
+    all_chars = words_to_chars(result.segments)
+    print(f"取得文字数: {len(all_chars)}")
+
+    # --- 元の字幕行の文字と照合 ---
+    # 句読点・スペース・記号を除いてマッチング
+    flat_orig = []
+    for line_idx, line in enumerate(orig_events):
+        for ch in line:
+            if PUNCT_PATTERN.match(ch):
+                continue
+            flat_orig.append({"line": line_idx, "char": ch})
+
+    flat_whisper = [c for c in all_chars if PUNCT_PATTERN.match(c["char"]) is None]
+
+    if len(flat_orig) != len(flat_whisper):
+        print(f"Warning: 文字数が一致しません (orig={len(flat_orig)}, whisper={len(flat_whisper)})。タイミングがずれる可能性があります。", file=sys.stderr)
+
+    # 最小長でアライメント
+    n = min(len(flat_orig), len(flat_whisper))
+    print(f"照合文字数: orig={len(flat_orig)}, whisper={len(flat_whisper)}, 使用={n}")
+
+    # 各行の開始・終了インデックスを記録
+    line_char_map = {}  # line_idx -> [char_timing, ...]
+    for i in range(n):
+        li = flat_orig[i]["line"]
+        if li not in line_char_map:
+            line_char_map[li] = []
+        line_char_map[li].append(flat_whisper[i])
+
+    # --- 新しいASSイベントを生成 ---
+    new_subs = pysubs2.SSAFile()
+    new_subs.info = subs_orig.info.copy()
+    new_subs.styles = subs_orig.styles.copy()
+
+    orig_event_list = [e for e in subs_orig if re.sub(r'\{[^}]*\}', '', e.text).strip()]
+
+    TAIL_MS = 300  # 最終文字後の表示延長
+
+    for line_idx, event in enumerate(orig_event_list):
+        plain = re.sub(r'\{[^}]*\}', '', event.text).strip()
+        char_timings = line_char_map.get(line_idx)
+
+        if not char_timings:
+            # タイミング取得できなかった行はそのまま保持
+            new_subs.append(event.copy())
+            continue
+
+        line_start_s = char_timings[0]["start"]
+        line_end_s   = char_timings[-1]["end"] + TAIL_MS / 1000
+
+        # 元の行の文字（句読点含む）に \k を割り当て
+        # 句読点はその前の文字の \k に吸収させる
+        timing_queue = list(char_timings)
+        k_parts = []
+        ti = 0
+
+        for ch in plain:
+            is_punct = bool(PUNCT_PATTERN.match(ch))
+            if is_punct:
+                # 句読点は直前の \k に時間を加算（または 0cs でスキップ）
+                if k_parts:
+                    k_parts[-1]["text"] += ch
+                else:
+                    k_parts.append({"k_cs": 0, "text": ch})
             else:
-                k_parts.append({"k_cs": 0, "text": ch})
-        else:
-            if ti < len(timing_queue):
-                t = timing_queue[ti]
-                duration_s = t["end"] - t["start"]
-                k_cs = max(1, round(duration_s * 100))
-                k_parts.append({"k_cs": k_cs, "text": ch})
-                ti += 1
-            else:
-                k_parts.append({"k_cs": 10, "text": ch})
+                if ti < len(timing_queue):
+                    t = timing_queue[ti]
+                    duration_s = t["end"] - t["start"]
+                    k_cs = max(1, round(duration_s * 100))
+                    k_parts.append({"k_cs": k_cs, "text": ch})
+                    ti += 1
+                else:
+                    k_parts.append({"k_cs": 10, "text": ch})
 
-    # \k タグ付きテキスト生成
-    ass_text = "".join(f"{{\\k{p['k_cs']}}}{p['text']}" for p in k_parts)
+        # \k タグ付きテキスト生成
+        ass_text = "".join(f"{{\\k{p['k_cs']}}}{p['text']}" for p in k_parts)
 
-    new_event = event.copy()
-    new_event.start = ms(line_start_s)
-    new_event.end   = ms(line_end_s)
-    new_event.text  = ass_text
-    new_subs.append(new_event)
+        new_event = event.copy()
+        new_event.start = ms(line_start_s)
+        new_event.end   = ms(line_end_s)
+        new_event.text  = ass_text
+        new_subs.append(new_event)
 
-    print(f"  行{line_idx+1}: {line_start_s:.2f}s - {line_end_s:.2f}s | {plain}")
+        print(f"  行{line_idx+1}: {line_start_s:.2f}s - {line_end_s:.2f}s | {plain}")
 
-new_subs.save(ASS_OUT)
-print(f"\n完了: {ASS_OUT}")
+    new_subs.save(ASS_OUT)
+    print(f"\n完了: {ASS_OUT}")
+
+
+if __name__ == "__main__":
+    main()
