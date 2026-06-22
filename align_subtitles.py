@@ -15,10 +15,6 @@ PUNCT_PATTERN = re.compile(r'[　 、。！？!?,.\s]')
 TAIL_MS = 300  # 最終文字後の表示延長
 
 
-def strip_punct(s):
-    return PUNCT_PATTERN.sub('', s)
-
-
 def words_to_chars(segments):
     chars = []
     for seg in segments:
@@ -48,14 +44,15 @@ def main():
     parser.add_argument("audio", help="Input audio file (mp3)")
     parser.add_argument("subtitles_in", help="Input subtitles file (ass)")
     parser.add_argument("subtitles_out", nargs="?", default="subtitles_aligned.ass", help="Output subtitles file (ass)")
+    parser.add_argument("--model", default="medium", help="Whisper model size (e.g., base, small, medium, large)")
     args = parser.parse_args()
 
-    AUDIO = args.audio
-    ASS_IN = args.subtitles_in
-    ASS_OUT = args.subtitles_out
+    audio = args.audio
+    ass_in = args.subtitles_in
+    ass_out = args.subtitles_out
 
     # --- 元のASS読み込み ---
-    subs_orig = pysubs2.load(ASS_IN)
+    subs_orig = pysubs2.load(ass_in)
     orig_events = []
     for event in subs_orig:
         plain = re.sub(r'\{[^}]*\}', '', event.text).strip()
@@ -66,10 +63,10 @@ def main():
 
     # --- アライメント実行 ---
     print("Whisperモデル読み込み中...")
-    model = stable_whisper.load_model("medium")
+    model = stable_whisper.load_model(args.model)
 
     print("アライメント実行中...")
-    result = model.align(AUDIO, text_to_align, language="ja")
+    result = model.align(audio, text_to_align, language="ja")
 
     # --- 文字レベルのタイムスタンプを収集 ---
     # 複数文字トークンは時間を等分配
@@ -161,8 +158,8 @@ def main():
 
         print(f"  行{valid_line_idx}: {line_start_s:.2f}s - {line_end_s:.2f}s | {plain}")
 
-    new_subs.save(ASS_OUT)
-    print(f"\n完了: {ASS_OUT}")
+    new_subs.save(ass_out)
+    print(f"\n完了: {ass_out}")
 
 
 if __name__ == "__main__":
