@@ -57,6 +57,9 @@ with Image.open(first_img_path) as probe:
 print(f"Image size: {IMG_W}x{IMG_H}")
 
 # --- ASS style parameters ---
+if SUBS_OVERRIDE and not os.path.exists(SUBS_OVERRIDE):
+    print(f"Error: 指定された字幕ファイルが見つかりません: {SUBS_OVERRIDE}", file=sys.stderr)
+    sys.exit(1)
 subtitle_file = SUBS_OVERRIDE or os.path.join(work_dir, "subtitles.ass")
 subs_raw = pysubs2.load(subtitle_file)
 

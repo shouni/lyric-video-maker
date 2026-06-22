@@ -11,7 +11,7 @@ import argparse
 import stable_whisper
 import pysubs2
 
-PUNCT_PATTERN = re.compile(r'[　 、。！？!?,.\s]')
+PUNCT_PATTERN = re.compile(r'[　 、。！？!?,.\s\-\[\]\(\)「」『』〜♪…※☆★●○◎]')
 TAIL_MS = 300  # 最終文字後の表示延長
 
 

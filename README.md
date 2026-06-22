@@ -45,7 +45,7 @@ audio.mp3 + keyframes.zip  →  output.mp4（カラオケ字幕付き）
 ### 依存パッケージのインストール
 
 ```sh
-pip install -r requirements.txt
+pip install stable-whisper pysubs2 pillow
 ```
 
 > ffmpeg が別途必要です（エンコードに使用）。
