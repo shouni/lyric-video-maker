@@ -2,12 +2,13 @@
 """Burn ASS karaoke subtitles onto PNG images and create MP4.
 
 Usage:
-    python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4]
+    python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4] [--subs <subtitles.ass>]
 """
 
 import re
 import os
 import sys
+import argparse
 import zipfile
 import subprocess
 import tempfile
@@ -15,13 +16,17 @@ from PIL import Image, ImageDraw, ImageFont
 import pysubs2
 
 # --- Args ---
-if len(sys.argv) < 3:
-    print("Usage: python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4]")
-    sys.exit(1)
+parser = argparse.ArgumentParser(description="Burn ASS karaoke subtitles onto PNG images and create MP4.")
+parser.add_argument("audio", help="Input audio file (mp3)")
+parser.add_argument("keyframes", help="Input keyframes zip file")
+parser.add_argument("output", nargs="?", default="output.mp4", help="Output MP4 file")
+parser.add_argument("--subs", dest="subs_override", help="Override subtitles file (ass)")
+args = parser.parse_args()
 
-AUDIO = sys.argv[1]
-ZIP_FILE = sys.argv[2]
-OUTPUT = sys.argv[3] if len(sys.argv) > 3 else "output.mp4"
+AUDIO = args.audio
+ZIP_FILE = args.keyframes
+OUTPUT = args.output
+SUBS_OVERRIDE = args.subs_override
 FRAMES_DIR = "frames_tmp"
 
 # --- Extract zip ---
@@ -52,7 +57,10 @@ with Image.open(first_img_path) as probe:
 print(f"Image size: {IMG_W}x{IMG_H}")
 
 # --- ASS style parameters ---
-subtitle_file = os.path.join(work_dir, "subtitles.ass")
+if SUBS_OVERRIDE and not os.path.exists(SUBS_OVERRIDE):
+    print(f"Error: 指定された字幕ファイルが見つかりません: {SUBS_OVERRIDE}", file=sys.stderr)
+    sys.exit(1)
+subtitle_file = SUBS_OVERRIDE or os.path.join(work_dir, "subtitles.ass")
 subs_raw = pysubs2.load(subtitle_file)
 
 # Read PlayResY from script info
