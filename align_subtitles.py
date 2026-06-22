@@ -12,6 +12,7 @@ import stable_whisper
 import pysubs2
 
 PUNCT_PATTERN = re.compile(r'[　 、。！？!?,.\s]')
+TAIL_MS = 300  # 最終文字後の表示延長
 
 
 def strip_punct(s):
@@ -87,11 +88,11 @@ def main():
     flat_whisper = [c for c in all_chars if PUNCT_PATTERN.match(c["char"]) is None]
 
     if len(flat_orig) != len(flat_whisper):
-        print(f"Warning: 文字数が一致しません (orig={len(flat_orig)}, whisper={len(flat_whisper)})。タイミングがずれる可能性があります。", file=sys.stderr)
+        print(f"Error: 文字数が一致しません (orig={len(flat_orig)}, whisper={len(flat_whisper)})。タイミングが全体的にずれるためアライメントを中断します。", file=sys.stderr)
+        sys.exit(1)
 
-    # 最小長でアライメント
-    n = min(len(flat_orig), len(flat_whisper))
-    print(f"照合文字数: orig={len(flat_orig)}, whisper={len(flat_whisper)}, 使用={n}")
+    n = len(flat_orig)
+    print(f"照合文字数: {n}")
 
     # 各行の開始・終了インデックスを記録
     line_char_map = {}  # line_idx -> [char_timing, ...]
@@ -106,16 +107,19 @@ def main():
     new_subs.info = subs_orig.info.copy()
     new_subs.styles = subs_orig.styles.copy()
 
-    orig_event_list = [e for e in subs_orig if re.sub(r'\{[^}]*\}', '', e.text).strip()]
-
-    TAIL_MS = 300  # 最終文字後の表示延長
-
-    for line_idx, event in enumerate(orig_event_list):
+    valid_line_idx = 0
+    for event in subs_orig:
         plain = re.sub(r'\{[^}]*\}', '', event.text).strip()
-        char_timings = line_char_map.get(line_idx)
+
+        if not plain:
+            # テキストを持たないイベント（空行やタグのみ）はそのまま保持
+            new_subs.append(event.copy())
+            continue
+
+        char_timings = line_char_map.get(valid_line_idx)
+        valid_line_idx += 1
 
         if not char_timings:
-            # タイミング取得できなかった行はそのまま保持
             new_subs.append(event.copy())
             continue
 
@@ -155,7 +159,7 @@ def main():
         new_event.text  = ass_text
         new_subs.append(new_event)
 
-        print(f"  行{line_idx+1}: {line_start_s:.2f}s - {line_end_s:.2f}s | {plain}")
+        print(f"  行{valid_line_idx}: {line_start_s:.2f}s - {line_end_s:.2f}s | {plain}")
 
     new_subs.save(ASS_OUT)
     print(f"\n完了: {ASS_OUT}")

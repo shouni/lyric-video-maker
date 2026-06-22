@@ -57,7 +57,7 @@ with Image.open(first_img_path) as probe:
 print(f"Image size: {IMG_W}x{IMG_H}")
 
 # --- ASS style parameters ---
-subtitle_file = SUBS_OVERRIDE if SUBS_OVERRIDE else os.path.join(work_dir, "subtitles.ass")
+subtitle_file = SUBS_OVERRIDE or os.path.join(work_dir, "subtitles.ass")
 subs_raw = pysubs2.load(subtitle_file)
 
 # Read PlayResY from script info
