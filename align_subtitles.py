@@ -15,6 +15,7 @@ import pysubs2
 
 PUNCT_PATTERN = re.compile(r'[　 、。！？!?,.\s\-\[\]\(\)「」『』〜♪…※☆★●○◎]')
 TAIL_MS = 300  # 最終文字後の表示延長
+FILL_GAP_MARGIN_MS = 100  # 繰り返し歌唱時に次行との間に残す余白
 
 
 def words_to_chars(segments):
@@ -166,6 +167,15 @@ def main():
         new_subs.append(new_event)
 
         print(f"  行{valid_line_idx}: {line_start_s:.2f}s - {line_end_s:.2f}s | {plain}")
+
+    # --- 繰り返し歌唱対応: ギャップを次行開始直前まで延長 ---
+    text_events = [e for e in new_subs if re.sub(r'\{[^}]*\}', '', e.text).strip()]
+    for i in range(len(text_events) - 1):
+        curr = text_events[i]
+        next_ev = text_events[i + 1]
+        gap_ms = next_ev.start - curr.end
+        if gap_ms > FILL_GAP_MARGIN_MS:
+            curr.end = next_ev.start - FILL_GAP_MARGIN_MS
 
     new_subs.save(ass_out)
     print(f"\n完了: {ass_out}")
