@@ -161,7 +161,11 @@ def main():
         ass_text = "".join(f"{{\\k{p['k_cs']}}}{p['text']}" for p in k_parts)
 
         new_event = event.copy()
-        new_event.start = ms(line_start_s)
+        # 最初の行は歌い出し対応のため元のASS開始時刻との早い方を採用
+        if valid_line_idx == 1:
+            new_event.start = min(ms(line_start_s), event.start)
+        else:
+            new_event.start = ms(line_start_s)
         new_event.end   = ms(line_end_s)
         new_event.text  = ass_text
         new_subs.append(new_event)

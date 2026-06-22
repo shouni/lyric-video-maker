@@ -30,11 +30,14 @@
 - [stable-ts](https://github.com/jianfch/stable-ts) を使って Whisper の推論結果を文字レベルに分解します。
 - ZIP 内の ASS から歌詞テキストだけを抽出して Whisper にアライメントさせ、句読点・記号は直前の文字の `\k` に吸収させます。
 - 出力は pysubs2 互換の ASS ファイルで、スタイル情報は元ファイルから引き継ぎます。
+- **歌い出し対応**: 1行目の開始時刻は「Whisper の判定」と「元 ASS の開始時刻」の早い方を採用します。元 ASS の1行目 Start を歌い出しに合わせておくと正確に表示されます。
+- **繰り返し歌唱対応**: AI 音源が同じ歌詞を繰り返す場合、各行の終了時刻を次行開始直前まで延長し、繰り返し中も現在の歌詞を表示し続けます。
 
 ### 🎤 ASS カラオケ字幕の完全再現（burn_subs.py）
 
 - `\k` タグを解析し、文字単位でハイライト色（黄）と待機色（白）を切り替えます。
 - 文字ごとの遷移タイミングをすべて算出し、状態が変わるフレームのみを描画します。
+- **フォント**: デフォルトで**源ノ角ゴシック（Source Han Sans VF）**を使用します（SIL Open Font License、YouTube 商用利用可）。インストールは `brew install --cask font-source-han-sans-vf`。
 
 ### ⚡ 差分描画による高速処理
 
@@ -146,7 +149,7 @@ duration 50.000
 
 | パッケージ | 用途 |
 | --- | --- |
-| [stable-whisper](https://github.com/jianfch/stable-ts) | Whisper による文字レベル音声アライメント |
+| [stable-ts](https://github.com/jianfch/stable-ts) | Whisper による文字レベル音声アライメント |
 | [Pillow](https://pillow.readthedocs.io/) | PNG 画像への字幕描画 |
 | [pysubs2](https://pysubs2.readthedocs.io/) | ASS 字幕ファイルのパース・スタイル取得 |
 | [ffmpeg](https://ffmpeg.org/) | 動画エンコード・音声合成（システムインストール） |
