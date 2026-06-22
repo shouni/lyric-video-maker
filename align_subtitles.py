@@ -161,7 +161,7 @@ def main():
         ass_text = "".join(f"{{\\k{p['k_cs']}}}{p['text']}" for p in k_parts)
 
         new_event = event.copy()
-        new_event.start = max(ms(line_start_s), event.start)
+        new_event.start = ms(line_start_s)
         new_event.end   = ms(line_end_s)
         new_event.text  = ass_text
         new_subs.append(new_event)
