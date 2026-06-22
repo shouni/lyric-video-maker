@@ -90,4 +90,10 @@ db.sqlite3
 /var/tmp/
 *.iml
 
+# 入出力ファイル（バイナリ・生成物）
+/input/*
+!/input/.gitkeep
+/output/*
+!/output/.gitkeep
+
 

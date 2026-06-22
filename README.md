@@ -88,7 +88,7 @@ python3 align_subtitles.py audio.mp3 lyrics.ass subtitles_aligned.ass --model me
 | `audio.mp3` | ✅ | アライメント対象の音声ファイル |
 | `subtitles.ass` | ✅ | 歌詞テキストを含む入力 ASS ファイル |
 | `output.ass` | ➖ | 出力 ASS ファイル名（省略時: `subtitles_aligned.ass`）|
-| `--model` | ➖ | Whisper モデルサイズ（`base` / `small` / `medium` / `large`、省略時: `medium`）|
+| `--model` | ➖ | Whisper モデルサイズ（`base` / `small` / `medium` / `large-v3`、省略時: `large-v3`）|
 
 **注意:** 入力 ASS の歌詞行数と Whisper が検出した文字数が一致しない場合はエラーで停止します。その場合は歌詞テキストの表記（スペース・句読点）を Whisper の出力に合わせて調整してください。
 
