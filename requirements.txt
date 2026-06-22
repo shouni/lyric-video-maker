@@ -1,0 +1,3 @@
+stable-whisper
+pysubs2
+pillow
