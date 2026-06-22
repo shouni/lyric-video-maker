@@ -95,5 +95,6 @@ db.sqlite3
 !/input/.gitkeep
 /output/*
 !/output/.gitkeep
+frames_tmp*/
 
 
