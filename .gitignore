@@ -19,7 +19,6 @@ pip-log.txt
 
 # Python パッケージ管理ファイル
 poetry.lock  # Poetryを使う場合、この行は削除してコミットすべきです
-requirements.txt # pipを使う場合、この行は削除してコミットすべきです
 
 # Pipenv ファイル (ロックファイルは通常コミットすべき)
 Pipfile.lock
@@ -74,8 +73,6 @@ build/
 
 # JetBrains IDEs (PyCharm, IntelliJ IDEAなど)
 .idea/
-
-C
 
 # データベースファイル
 *.sqlite3
