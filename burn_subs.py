@@ -2,7 +2,7 @@
 """Burn ASS karaoke subtitles onto PNG images and create MP4.
 
 Usage:
-    python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4]
+    python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4] [--subs <subtitles.ass>]
 """
 
 import re
@@ -16,12 +16,24 @@ import pysubs2
 
 # --- Args ---
 if len(sys.argv) < 3:
-    print("Usage: python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4]")
+    print("Usage: python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4] [--subs <subtitles.ass>]")
     sys.exit(1)
 
 AUDIO = sys.argv[1]
 ZIP_FILE = sys.argv[2]
-OUTPUT = sys.argv[3] if len(sys.argv) > 3 else "output.mp4"
+
+# --subs オプションで字幕ファイルを上書き可能
+_args = sys.argv[3:]
+SUBS_OVERRIDE = None
+OUTPUT = "output.mp4"
+i = 0
+while i < len(_args):
+    if _args[i] == "--subs" and i + 1 < len(_args):
+        SUBS_OVERRIDE = _args[i + 1]
+        i += 2
+    else:
+        OUTPUT = _args[i]
+        i += 1
 FRAMES_DIR = "frames_tmp"
 
 # --- Extract zip ---
@@ -52,7 +64,7 @@ with Image.open(first_img_path) as probe:
 print(f"Image size: {IMG_W}x{IMG_H}")
 
 # --- ASS style parameters ---
-subtitle_file = os.path.join(work_dir, "subtitles.ass")
+subtitle_file = SUBS_OVERRIDE if SUBS_OVERRIDE else os.path.join(work_dir, "subtitles.ass")
 subs_raw = pysubs2.load(subtitle_file)
 
 # Read PlayResY from script info
