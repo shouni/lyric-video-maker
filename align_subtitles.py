@@ -44,7 +44,7 @@ def main():
     parser.add_argument("audio", help="Input audio file (mp3)")
     parser.add_argument("subtitles_in", help="Input subtitles file (ass)")
     parser.add_argument("subtitles_out", nargs="?", default="subtitles_aligned.ass", help="Output subtitles file (ass)")
-    parser.add_argument("--model", default="medium", help="Whisper model size (e.g., base, small, medium, large)")
+    parser.add_argument("--model", default="large-v3", help="Whisper model size (e.g., base, small, medium, large-v3)")
     args = parser.parse_args()
 
     audio = args.audio
@@ -66,7 +66,10 @@ def main():
     model = stable_whisper.load_model(args.model)
 
     print("アライメント実行中...")
-    result = model.align(audio, text_to_align, language="ja")
+    result = model.align(audio, text_to_align, language="ja", vad=True)
+
+    print("タイムスタンプ精緻化中...")
+    result = result.refine(audio)
 
     # --- 文字レベルのタイムスタンプを収集 ---
     # 複数文字トークンは時間を等分配
