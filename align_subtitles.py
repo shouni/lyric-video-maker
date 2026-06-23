@@ -15,6 +15,7 @@ import pysubs2
 
 PUNCT_PATTERN = re.compile(r'[　 、。！？!?,.\s\-\[\]\(\)「」『』〜♪…※☆★●○◎]')
 TAIL_MS = 300  # 最終文字後の表示延長
+FILL_GAP_MARGIN_MS = 100  # 繰り返し歌唱時に次行との間に残す余白
 
 
 def words_to_chars(segments):
@@ -160,12 +161,25 @@ def main():
         ass_text = "".join(f"{{\\k{p['k_cs']}}}{p['text']}" for p in k_parts)
 
         new_event = event.copy()
-        new_event.start = ms(line_start_s)
+        # 最初の行は歌い出し対応のため、元のASSがWhisperより少し早い場合のみ元のASSを採用
+        if valid_line_idx == 1 and 0 < ms(line_start_s) - event.start <= 3000:
+            new_event.start = event.start
+        else:
+            new_event.start = ms(line_start_s)
         new_event.end   = ms(line_end_s)
         new_event.text  = ass_text
         new_subs.append(new_event)
 
         print(f"  行{valid_line_idx}: {line_start_s:.2f}s - {line_end_s:.2f}s | {plain}")
+
+    # --- 繰り返し歌唱対応: ギャップを次行開始直前まで延長 ---
+    text_events = [e for e in new_subs if re.sub(r'\{[^}]*\}', '', e.text).strip()]
+    for i in range(len(text_events) - 1):
+        curr = text_events[i]
+        next_ev = text_events[i + 1]
+        gap_ms = next_ev.start - curr.end
+        if gap_ms > FILL_GAP_MARGIN_MS:
+            curr.end = next_ev.start - FILL_GAP_MARGIN_MS
 
     new_subs.save(ass_out)
     print(f"\n完了: {ass_out}")

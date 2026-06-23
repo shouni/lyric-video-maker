@@ -86,6 +86,8 @@ print(f"Primary: {PRIMARY}, Secondary: {SECONDARY}")
 
 # --- Font ---
 FONT_CANDIDATES = [
+    "/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc",
+    os.path.expanduser("~/Library/Fonts/SourceHanSans-VF.otf.ttc"),
     "/System/Library/Fonts/Hiragino Sans GB.ttc",
     "/System/Library/Fonts/AppleSDGothicNeo.ttc",
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",

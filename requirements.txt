@@ -1,4 +1,4 @@
-stable-whisper
+stable-ts
 pysubs2
 pillow
 silero-vad
