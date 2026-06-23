@@ -97,4 +97,12 @@ db.sqlite3
 !/output/.gitkeep
 frames_tmp*/
 
+# 音源・動画・字幕生成物
+*.mp3
+*.wav
+*.m4a
+*.mp4
+*.mov
+*.zip
+*.ass
 
