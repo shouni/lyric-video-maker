@@ -30,14 +30,14 @@
 - [stable-ts](https://github.com/jianfch/stable-ts) を使って Whisper の推論結果を文字レベルに分解します。
 - ZIP 内の ASS から歌詞テキストだけを抽出して Whisper にアライメントさせ、句読点・記号は直前の文字の `\k` に吸収させます。
 - 出力は pysubs2 互換の ASS ファイルで、スタイル情報は元ファイルから引き継ぎます。
-- **歌い出し対応**: 1行目の開始時刻は「Whisper の判定」と「元 ASS の開始時刻」の早い方を採用します。元 ASS の1行目 Start を歌い出しに合わせておくと正確に表示されます。
+- **歌い出し対応**: 1行目のみ、元 ASS の開始時刻が Whisper の判定より **0〜3秒だけ早い**場合に限り、元 ASS の開始時刻を採用します。3秒を超える差がある場合や Whisper の方が早い場合は Whisper の判定を使用します。元 ASS の1行目 Start を歌い出しに合わせておくと正確に表示されます。
 - **繰り返し歌唱対応**: AI 音源が同じ歌詞を繰り返す場合、各行の終了時刻を次行開始直前まで延長し、繰り返し中も現在の歌詞を表示し続けます。
 
 ### 🎤 ASS カラオケ字幕の完全再現（burn_subs.py）
 
 - `\k` タグを解析し、文字単位でハイライト色（黄）と待機色（白）を切り替えます。
 - 文字ごとの遷移タイミングをすべて算出し、状態が変わるフレームのみを描画します。
-- **フォント**: デフォルトで**源ノ角ゴシック（Source Han Sans VF）**を使用します（SIL Open Font License、YouTube 商用利用可）。インストールは `brew install --cask font-source-han-sans-vf`。
+- **フォント**: macOS 標準の**ヒラギノ角ゴシック W7**を最優先で使用します。見つからない場合は**源ノ角ゴシック（Source Han Sans VF）**にフォールバックします（SIL Open Font License、YouTube 商用利用可）。Source Han Sans VF のインストールは `brew install --cask font-source-han-sans-vf`。
 
 ### ⚡ 差分描画による高速処理
 
