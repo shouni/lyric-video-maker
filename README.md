@@ -37,7 +37,7 @@
 
 - `\k` タグを解析し、文字単位でハイライト色（黄）と待機色（白）を切り替えます。
 - 文字ごとの遷移タイミングをすべて算出し、状態が変わるフレームのみを描画します。
-- **フォント**: macOS 標準の**ヒラギノ角ゴシック W7**を最優先で使用します。見つからない場合は**源ノ角ゴシック（Source Han Sans VF）**にフォールバックします（SIL Open Font License、YouTube 商用利用可）。Source Han Sans VF のインストールは `brew install --cask font-source-han-sans-vf`。
+- **フォント**: macOS 標準の**ヒラギノ角ゴシック W7**を最優先で使用します。見つからない場合は**源ノ角ゴシック**（Source Han Sans VF）にフォールバックします（SIL Open Font License、YouTube 商用利用可）。Source Han Sans VF のインストールは `brew install --cask font-source-han-sans-vf`。
 
 ### ⚡ 差分描画による高速処理
 
