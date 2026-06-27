@@ -12,9 +12,22 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from dataclasses import dataclass
+from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 import pysubs2
+
+
+@dataclass
+class RenderConfig:
+    font: Any
+    img_size: tuple
+    margin_v: int
+    outline: int
+    primary: tuple
+    secondary: tuple
+    outline_color: tuple
 
 
 FONT_CANDIDATES = [
@@ -117,19 +130,7 @@ def get_base_img(path, img_cache):
     return img_cache[path].copy()
 
 
-def render_frame(
-    img_path,
-    evt,
-    elapsed_cs,
-    img_cache,
-    font,
-    img_size,
-    margin_v,
-    outline,
-    primary,
-    secondary,
-    outline_color,
-):
+def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
     """Render the active karaoke line onto one image frame."""
     img = get_base_img(img_path, img_cache)
     if evt is None:
@@ -139,31 +140,31 @@ def render_frame(
     if not segs:
         return img
 
-    img_w, img_h = img_size
+    img_w, img_h = cfg.img_size
     n_highlighted = sum(1 for (s, _e, _text) in segs if elapsed_cs >= s)
 
     draw = ImageDraw.Draw(img)
     full_text = "".join(t for _, _, t in segs)
 
-    bbox = draw.textbbox((0, 0), full_text, font=font)
+    bbox = draw.textbbox((0, 0), full_text, font=cfg.font)
     total_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
 
     x = (img_w - total_w) // 2
-    y = img_h - text_h - margin_v
+    y = img_h - text_h - cfg.margin_v
 
     cur_x = x
     for i, (_s, _e, seg_text) in enumerate(segs):
-        color = primary if i < n_highlighted else secondary
+        color = cfg.primary if i < n_highlighted else cfg.secondary
         draw.text(
             (cur_x, y),
             seg_text,
-            font=font,
+            font=cfg.font,
             fill=color,
-            stroke_width=outline,
-            stroke_fill=outline_color,
+            stroke_width=cfg.outline,
+            stroke_fill=cfg.outline_color,
         )
-        seg_bbox = draw.textbbox((0, 0), seg_text, font=font)
+        seg_bbox = draw.textbbox((0, 0), seg_text, font=cfg.font)
         cur_x += seg_bbox[2] - seg_bbox[0]
 
     return img
@@ -185,13 +186,7 @@ def build_concat_lines(
     transitions,
     timeline,
     events,
-    font,
-    img_size,
-    margin_v,
-    outline,
-    primary,
-    secondary,
-    outline_color,
+    cfg,
     frames_dir,
     img_cache=None,
 ):
@@ -225,19 +220,7 @@ def build_concat_lines(
             base = os.path.splitext(os.path.basename(img_file))[0]
             evt_start = str(evt[0] if evt else "x").replace(".", "_")
             frame_path = os.path.join(frames_dir, f"frame_{base}_{evt_start}_{n_hl}.png")
-            img = render_frame(
-                img_file,
-                evt,
-                elapsed_cs,
-                img_cache,
-                font,
-                img_size,
-                margin_v,
-                outline,
-                primary,
-                secondary,
-                outline_color,
-            )
+            img = render_frame(img_file, evt, elapsed_cs, img_cache, cfg)
             img.save(frame_path)
             rendered_cache[state_key] = frame_path
             print(f"  Rendered: {os.path.basename(frame_path)}")
@@ -316,6 +299,15 @@ def main():
         print(f"Primary: {primary}, Secondary: {secondary}")
 
         font = load_font(font_size)
+        cfg = RenderConfig(
+            font=font,
+            img_size=(img_w, img_h),
+            margin_v=margin_v,
+            outline=outline,
+            primary=primary,
+            secondary=secondary,
+            outline_color=outline_color,
+        )
         timeline, total_dur = build_timeline(work_dir, images_with_durations)
         events = [(e.start / 1000.0, e.end / 1000.0, e.text) for e in subs_raw]
         transitions = collect_transition_times(events, total_dur)
@@ -323,22 +315,10 @@ def main():
 
         frames_dir = os.path.join(work_dir, "frames")
         os.makedirs(frames_dir, exist_ok=True)
-        concat_lines = build_concat_lines(
-            transitions,
-            timeline,
-            events,
-            font,
-            (img_w, img_h),
-            margin_v,
-            outline,
-            primary,
-            secondary,
-            outline_color,
-            frames_dir,
-        )
+        concat_lines = build_concat_lines(transitions, timeline, events, cfg, frames_dir)
 
         concat_txt = os.path.join(frames_dir, "concat.txt")
-        with open(concat_txt, "w") as f:
+        with open(concat_txt, "w", encoding="utf-8") as f:
             f.write("\n".join(concat_lines))
 
         result = run_ffmpeg(concat_txt, args.audio, args.output)
