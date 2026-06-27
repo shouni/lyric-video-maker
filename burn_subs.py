@@ -49,7 +49,7 @@ def read_images_with_durations(inputs_txt):
     """Read ffmpeg concat file entries as image filename and duration pairs."""
     images_with_durations = []
     current_file = None
-    with open(inputs_txt) as f:
+    with open(inputs_txt, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line.startswith("file "):
@@ -176,7 +176,6 @@ def build_concat_lines(
     transitions,
     timeline,
     events,
-    img_cache,
     font,
     img_size,
     margin_v,
@@ -184,8 +183,11 @@ def build_concat_lines(
     primary,
     secondary,
     outline_color,
+    img_cache=None,
 ):
     """Render unique subtitle states and return ffmpeg concat file lines."""
+    if img_cache is None:
+        img_cache = {}
     concat_lines = []
     rendered_cache = {}
     last_frame_path = None
@@ -255,8 +257,6 @@ def run_ffmpeg(concat_txt, audio, output):
             "-shortest",
             output,
         ],
-        capture_output=True,
-        text=True,
     )
 
 
@@ -273,69 +273,69 @@ def main():
         print(f"Error: 指定された字幕ファイルが見つかりません: {args.subs_override}", file=sys.stderr)
         sys.exit(1)
 
-    work_dir = tempfile.mkdtemp(prefix="burn_subs_")
-    print(f"Extracting {args.keyframes} -> {work_dir}")
-    with zipfile.ZipFile(args.keyframes) as z:
-        z.extractall(work_dir)
+    with tempfile.TemporaryDirectory(prefix="burn_subs_") as work_dir:
+        print(f"Extracting {args.keyframes} -> {work_dir}")
+        with zipfile.ZipFile(args.keyframes) as z:
+            z.extractall(work_dir)
 
-    inputs_txt = os.path.join(work_dir, "inputs.txt")
-    images_with_durations = read_images_with_durations(inputs_txt)
-    print(f"Images: {[f for f, _ in images_with_durations]}")
+        inputs_txt = os.path.join(work_dir, "inputs.txt")
+        images_with_durations = read_images_with_durations(inputs_txt)
+        print(f"Images: {[f for f, _ in images_with_durations]}")
 
-    first_img_path = os.path.join(work_dir, images_with_durations[0][0])
-    with Image.open(first_img_path) as probe:
-        img_w, img_h = probe.size
-    print(f"Image size: {img_w}x{img_h}")
+        first_img_path = os.path.join(work_dir, images_with_durations[0][0])
+        with Image.open(first_img_path) as probe:
+            img_w, img_h = probe.size
+        print(f"Image size: {img_w}x{img_h}")
 
-    subtitle_file = args.subs_override or os.path.join(work_dir, "subtitles.ass")
-    subs_raw = pysubs2.load(subtitle_file)
+        subtitle_file = args.subs_override or os.path.join(work_dir, "subtitles.ass")
+        subs_raw = pysubs2.load(subtitle_file)
 
-    play_res_y = int(subs_raw.info.get("PlayResY", "1080"))
-    scale = img_h / play_res_y
+        play_res_y = int(subs_raw.info.get("PlayResY", "1080"))
+        scale = img_h / play_res_y
 
-    style = subs_raw.styles.get("Karaoke") or list(subs_raw.styles.values())[0]
-    font_size = int(style.fontsize * scale)
-    margin_v = int(style.marginv * scale)
-    outline = max(1, int(style.outline * scale))
-    primary = color_to_rgb(style.primarycolor)
-    secondary = color_to_rgb(style.secondarycolor)
-    outline_color = color_to_rgb(style.outlinecolor)
+        style = subs_raw.styles.get("Karaoke") or list(subs_raw.styles.values())[0]
+        font_size = int(style.fontsize * scale)
+        margin_v = int(style.marginv * scale)
+        outline = max(1, int(style.outline * scale))
+        primary = color_to_rgb(style.primarycolor)
+        secondary = color_to_rgb(style.secondarycolor)
+        outline_color = color_to_rgb(style.outlinecolor)
 
-    print(f"Font size: {font_size}, MarginV: {margin_v}, Outline: {outline}")
-    print(f"Primary: {primary}, Secondary: {secondary}")
+        print(f"Font size: {font_size}, MarginV: {margin_v}, Outline: {outline}")
+        print(f"Primary: {primary}, Secondary: {secondary}")
 
-    font = load_font(font_size)
-    timeline, total_dur = build_timeline(work_dir, images_with_durations)
-    events = [(e.start / 1000.0, e.end / 1000.0, e.text) for e in subs_raw]
-    transitions = collect_transition_times(events, total_dur)
-    print(f"Total transition segments: {len(transitions) - 1}")
+        font = load_font(font_size)
+        timeline, total_dur = build_timeline(work_dir, images_with_durations)
+        events = [(e.start / 1000.0, e.end / 1000.0, e.text) for e in subs_raw]
+        transitions = collect_transition_times(events, total_dur)
+        print(f"Total transition segments: {len(transitions) - 1}")
 
-    os.makedirs(FRAMES_DIR, exist_ok=True)
-    concat_lines = build_concat_lines(
-        transitions,
-        timeline,
-        events,
-        {},
-        font,
-        (img_w, img_h),
-        margin_v,
-        outline,
-        primary,
-        secondary,
-        outline_color,
-    )
+        os.makedirs(FRAMES_DIR, exist_ok=True)
+        concat_lines = build_concat_lines(
+            transitions,
+            timeline,
+            events,
+            font,
+            (img_w, img_h),
+            margin_v,
+            outline,
+            primary,
+            secondary,
+            outline_color,
+        )
 
-    concat_txt = os.path.join(FRAMES_DIR, "concat.txt")
-    with open(concat_txt, "w") as f:
-        f.write("\n".join(concat_lines))
+        concat_txt = os.path.join(FRAMES_DIR, "concat.txt")
+        with open(concat_txt, "w") as f:
+            f.write("\n".join(concat_lines))
 
-    result = run_ffmpeg(concat_txt, args.audio, args.output)
+        result = run_ffmpeg(concat_txt, args.audio, args.output)
 
     if result.returncode == 0:
         size_mb = os.path.getsize(args.output) / 1024 / 1024
         print(f"Done! {args.output} ({size_mb:.1f} MB)")
     else:
-        print(f"ffmpeg error:\n{result.stderr[-3000:]}")
+        print(f"ffmpeg failed (exit code {result.returncode})")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
