@@ -5,86 +5,19 @@ Usage:
     python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4] [--subs <subtitles.ass>]
 """
 
-import re
-import os
-import sys
 import argparse
-import zipfile
+import os
+import re
 import subprocess
+import sys
 import tempfile
+import zipfile
+
 from PIL import Image, ImageDraw, ImageFont
 import pysubs2
 
-# --- Args ---
-parser = argparse.ArgumentParser(description="Burn ASS karaoke subtitles onto PNG images and create MP4.")
-parser.add_argument("audio", help="Input audio file (mp3)")
-parser.add_argument("keyframes", help="Input keyframes zip file")
-parser.add_argument("output", nargs="?", default="output.mp4", help="Output MP4 file")
-parser.add_argument("--subs", dest="subs_override", help="Override subtitles file (ass)")
-args = parser.parse_args()
 
-AUDIO = args.audio
-ZIP_FILE = args.keyframes
-OUTPUT = args.output
-SUBS_OVERRIDE = args.subs_override
 FRAMES_DIR = "frames_tmp"
-
-# --- Extract zip ---
-work_dir = tempfile.mkdtemp(prefix="burn_subs_")
-print(f"Extracting {ZIP_FILE} -> {work_dir}")
-with zipfile.ZipFile(ZIP_FILE) as z:
-    z.extractall(work_dir)
-
-# --- Read inputs.txt ---
-inputs_txt = os.path.join(work_dir, "inputs.txt")
-images_with_durations = []
-current_file = None
-with open(inputs_txt) as f:
-    for line in f:
-        line = line.strip()
-        if line.startswith("file "):
-            current_file = line.split("'")[1]
-        elif line.startswith("duration "):
-            dur = float(line.split()[1])
-            images_with_durations.append((current_file, dur))
-
-print(f"Images: {[f for f,_ in images_with_durations]}")
-
-# --- Detect image size from first image ---
-first_img_path = os.path.join(work_dir, images_with_durations[0][0])
-with Image.open(first_img_path) as probe:
-    IMG_W, IMG_H = probe.size
-print(f"Image size: {IMG_W}x{IMG_H}")
-
-# --- ASS style parameters ---
-if SUBS_OVERRIDE and not os.path.exists(SUBS_OVERRIDE):
-    print(f"Error: 指定された字幕ファイルが見つかりません: {SUBS_OVERRIDE}", file=sys.stderr)
-    sys.exit(1)
-subtitle_file = SUBS_OVERRIDE or os.path.join(work_dir, "subtitles.ass")
-subs_raw = pysubs2.load(subtitle_file)
-
-# Read PlayResY from script info
-PLAY_RES_Y = subs_raw.info.get("PlayResY", "1080")
-PLAY_RES_Y = int(PLAY_RES_Y)
-SCALE = IMG_H / PLAY_RES_Y
-
-# Read style
-style = subs_raw.styles.get("Karaoke") or list(subs_raw.styles.values())[0]
-FONT_SIZE = int(style.fontsize * SCALE)
-MARGIN_V = int(style.marginv * SCALE)
-OUTLINE = max(1, int(style.outline * SCALE))
-
-def color_to_rgb(c):
-    return (c.r, c.g, c.b)
-
-PRIMARY = color_to_rgb(style.primarycolor)
-SECONDARY = color_to_rgb(style.secondarycolor)
-OUTLINE_COLOR = color_to_rgb(style.outlinecolor)
-
-print(f"Font size: {FONT_SIZE}, MarginV: {MARGIN_V}, Outline: {OUTLINE}")
-print(f"Primary: {PRIMARY}, Secondary: {SECONDARY}")
-
-# --- Font ---
 FONT_CANDIDATES = [
     "/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc",
     os.path.expanduser("~/Library/Fonts/SourceHanSans-VF.otf.ttc"),
@@ -93,21 +26,15 @@ FONT_CANDIDATES = [
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     "/Library/Fonts/Arial Unicode.ttf",
 ]
-font = None
-for path in FONT_CANDIDATES:
-    if os.path.exists(path):
-        try:
-            font = ImageFont.truetype(path, FONT_SIZE)
-            print(f"Font: {path}")
-            break
-        except Exception:
-            continue
-if font is None:
-    print("Warning: no CJK font found, using default")
-    font = ImageFont.load_default()
 
-# --- Karaoke parser ---
+
+def color_to_rgb(c):
+    """Convert a pysubs2 ASS color object to a PIL-compatible RGB tuple."""
+    return (c.r, c.g, c.b)
+
+
 def parse_karaoke(raw_text):
+    """Parse ASS karaoke \\k tags into centisecond text segments."""
     segments = []
     cs = 0
     for m in re.finditer(r'\{\\k(\d+)\}([^{]*)', raw_text):
@@ -117,52 +44,85 @@ def parse_karaoke(raw_text):
         cs += k
     return segments
 
-# --- Build image timeline ---
-timeline = []
-t = 0.0
-for img, dur in images_with_durations:
-    timeline.append((t, t + dur, os.path.join(work_dir, img)))
-    t += dur
-total_dur = t
 
-def img_at(t_sec):
+def read_images_with_durations(inputs_txt):
+    """Read ffmpeg concat file entries as image filename and duration pairs."""
+    images_with_durations = []
+    current_file = None
+    with open(inputs_txt) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("file "):
+                current_file = line.split("'")[1]
+            elif line.startswith("duration "):
+                dur = float(line.split()[1])
+                images_with_durations.append((current_file, dur))
+    return images_with_durations
+
+
+def build_timeline(work_dir, images_with_durations):
+    """Build absolute image time ranges from concat image durations."""
+    timeline = []
+    t = 0.0
+    for img, dur in images_with_durations:
+        timeline.append((t, t + dur, os.path.join(work_dir, img)))
+        t += dur
+    return timeline, t
+
+
+def img_at(timeline, t_sec):
+    """Return the image path active at the given time in seconds."""
     for start, end, img in timeline:
         if start <= t_sec < end:
             return img
     return timeline[-1][2]
 
-# --- Load subtitle events ---
-events = [(e.start / 1000.0, e.end / 1000.0, e.text) for e in subs_raw]
 
-def event_at(t_sec):
+def event_at(events, t_sec):
+    """Return the subtitle event active at the given time in seconds."""
     for start, end, text in events:
         if start <= t_sec < end:
             return (start, end, text)
     return None
 
-# --- Collect all karaoke transition times ---
-transitions = {0.0, total_dur}
-for start, end, text in events:
-    transitions.add(start)
-    transitions.add(end)
-    for seg_cs_s, seg_cs_e, _ in parse_karaoke(text):
-        transitions.add(start + seg_cs_s / 100.0)
-        transitions.add(start + seg_cs_e / 100.0)
 
-transitions = sorted(transitions)
-print(f"Total transition segments: {len(transitions) - 1}")
+def load_font(font_size):
+    """Load a CJK-capable font for rendering Japanese karaoke text."""
+    for path in FONT_CANDIDATES:
+        if os.path.exists(path):
+            try:
+                font = ImageFont.truetype(path, font_size)
+                print(f"Font: {path}")
+                return font
+            except Exception:
+                continue
 
-# --- Rendering ---
-os.makedirs(FRAMES_DIR, exist_ok=True)
-img_cache = {}
+    print("Warning: no CJK font found, using default")
+    return ImageFont.load_default()
 
-def get_base_img(path):
+
+def get_base_img(path, img_cache):
+    """Return a copy of a cached RGB source image."""
     if path not in img_cache:
         img_cache[path] = Image.open(path).convert("RGB")
     return img_cache[path].copy()
 
-def render_frame(img_path, evt, elapsed_cs):
-    img = get_base_img(img_path)
+
+def render_frame(
+    img_path,
+    evt,
+    elapsed_cs,
+    img_cache,
+    font,
+    img_size,
+    margin_v,
+    outline,
+    primary,
+    secondary,
+    outline_color,
+):
+    """Render the active karaoke line onto one image frame."""
+    img = get_base_img(img_path, img_cache)
     if evt is None:
         return img
 
@@ -170,7 +130,8 @@ def render_frame(img_path, evt, elapsed_cs):
     if not segs:
         return img
 
-    n_highlighted = sum(1 for (s, e, _) in segs if elapsed_cs >= s)
+    img_w, img_h = img_size
+    n_highlighted = sum(1 for (s, _e, _text) in segs if elapsed_cs >= s)
 
     draw = ImageDraw.Draw(img)
     full_text = "".join(t for _, _, t in segs)
@@ -179,87 +140,203 @@ def render_frame(img_path, evt, elapsed_cs):
     total_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
 
-    x = (IMG_W - total_w) // 2
-    y = IMG_H - text_h - MARGIN_V
+    x = (img_w - total_w) // 2
+    y = img_h - text_h - margin_v
 
     cur_x = x
-    for i, (s, e, seg_text) in enumerate(segs):
-        color = PRIMARY if i < n_highlighted else SECONDARY
+    for i, (_s, _e, seg_text) in enumerate(segs):
+        color = primary if i < n_highlighted else secondary
         draw.text(
-            (cur_x, y), seg_text, font=font,
+            (cur_x, y),
+            seg_text,
+            font=font,
             fill=color,
-            stroke_width=OUTLINE,
-            stroke_fill=OUTLINE_COLOR,
+            stroke_width=outline,
+            stroke_fill=outline_color,
         )
         seg_bbox = draw.textbbox((0, 0), seg_text, font=font)
         cur_x += seg_bbox[2] - seg_bbox[0]
 
     return img
 
-# --- Render unique frames and build concat list ---
-concat_lines = []
-rendered_cache = {}
-last_frame_path = None
 
-for i in range(len(transitions) - 1):
-    seg_start = transitions[i]
-    seg_end = transitions[i + 1]
-    dur = seg_end - seg_start
-    if dur < 1e-6:
-        continue
+def collect_transition_times(events, total_dur):
+    """Collect every time where the rendered subtitle state can change."""
+    transitions = {0.0, total_dur}
+    for start, end, text in events:
+        transitions.add(start)
+        transitions.add(end)
+        for seg_cs_s, seg_cs_e, _ in parse_karaoke(text):
+            transitions.add(start + seg_cs_s / 100.0)
+            transitions.add(start + seg_cs_e / 100.0)
+    return sorted(transitions)
 
-    mid = (seg_start + seg_end) / 2
-    img_file = img_at(mid)
-    evt = event_at(mid)
 
-    elapsed_cs = (mid - evt[0]) * 100 if evt else 0
-    n_hl = 0
-    if evt:
-        segs = parse_karaoke(evt[2])
-        n_hl = sum(1 for (s, e, _) in segs if elapsed_cs >= s)
+def build_concat_lines(
+    transitions,
+    timeline,
+    events,
+    img_cache,
+    font,
+    img_size,
+    margin_v,
+    outline,
+    primary,
+    secondary,
+    outline_color,
+):
+    """Render unique subtitle states and return ffmpeg concat file lines."""
+    concat_lines = []
+    rendered_cache = {}
+    last_frame_path = None
 
-    state_key = (img_file, evt[0] if evt else None, n_hl)
+    for i in range(len(transitions) - 1):
+        seg_start = transitions[i]
+        seg_end = transitions[i + 1]
+        dur = seg_end - seg_start
+        if dur < 1e-6:
+            continue
 
-    if state_key not in rendered_cache:
-        base = os.path.splitext(os.path.basename(img_file))[0]
-        frame_path = os.path.join(
-            FRAMES_DIR,
-            f"frame_{base}_{str(evt[0] if evt else 'x').replace('.','_')}_{n_hl}.png"
-        )
-        img = render_frame(img_file, evt, elapsed_cs)
-        img.save(frame_path)
-        rendered_cache[state_key] = frame_path
-        print(f"  Rendered: {os.path.basename(frame_path)}")
+        mid = (seg_start + seg_end) / 2
+        img_file = img_at(timeline, mid)
+        evt = event_at(events, mid)
 
-    frame_path = rendered_cache[state_key]
-    last_frame_path = frame_path
-    concat_lines.append(f"file '{os.path.abspath(frame_path)}'")
-    concat_lines.append(f"duration {dur:.6f}")
+        elapsed_cs = (mid - evt[0]) * 100 if evt else 0
+        n_hl = 0
+        if evt:
+            segs = parse_karaoke(evt[2])
+            n_hl = sum(1 for (s, _e, _text) in segs if elapsed_cs >= s)
 
-if last_frame_path:
-    concat_lines.append(f"file '{os.path.abspath(last_frame_path)}'")
+        state_key = (img_file, evt[0] if evt else None, n_hl)
 
-concat_txt = os.path.join(FRAMES_DIR, "concat.txt")
-with open(concat_txt, "w") as f:
-    f.write("\n".join(concat_lines))
+        if state_key not in rendered_cache:
+            base = os.path.splitext(os.path.basename(img_file))[0]
+            evt_start = str(evt[0] if evt else "x").replace(".", "_")
+            frame_path = os.path.join(FRAMES_DIR, f"frame_{base}_{evt_start}_{n_hl}.png")
+            img = render_frame(
+                img_file,
+                evt,
+                elapsed_cs,
+                img_cache,
+                font,
+                img_size,
+                margin_v,
+                outline,
+                primary,
+                secondary,
+                outline_color,
+            )
+            img.save(frame_path)
+            rendered_cache[state_key] = frame_path
+            print(f"  Rendered: {os.path.basename(frame_path)}")
 
-print(f"\nRunning ffmpeg...")
-result = subprocess.run(
-    [
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", concat_txt,
-        "-i", AUDIO,
-        "-c:v", "libx264", "-c:a", "aac", "-b:a", "192k",
-        "-pix_fmt", "yuv420p",
-        "-shortest",
-        OUTPUT,
-    ],
-    capture_output=True, text=True,
-)
+        frame_path = rendered_cache[state_key]
+        last_frame_path = frame_path
+        concat_lines.append(f"file '{os.path.abspath(frame_path)}'")
+        concat_lines.append(f"duration {dur:.6f}")
 
-if result.returncode == 0:
-    size_mb = os.path.getsize(OUTPUT) / 1024 / 1024
-    print(f"Done! {OUTPUT} ({size_mb:.1f} MB)")
-else:
-    print(f"ffmpeg error:\n{result.stderr[-3000:]}")
+    if last_frame_path:
+        concat_lines.append(f"file '{os.path.abspath(last_frame_path)}'")
+
+    return concat_lines
+
+
+def run_ffmpeg(concat_txt, audio, output):
+    """Encode rendered frames and audio into the final MP4."""
+    print("\nRunning ffmpeg...")
+    return subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", concat_txt,
+            "-i", audio,
+            "-c:v", "libx264", "-c:a", "aac", "-b:a", "192k",
+            "-pix_fmt", "yuv420p",
+            "-shortest",
+            output,
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+
+def main():
+    """Load inputs, render karaoke subtitle frames, and encode the output video."""
+    parser = argparse.ArgumentParser(description="Burn ASS karaoke subtitles onto PNG images and create MP4.")
+    parser.add_argument("audio", help="Input audio file (mp3)")
+    parser.add_argument("keyframes", help="Input keyframes zip file")
+    parser.add_argument("output", nargs="?", default="output.mp4", help="Output MP4 file")
+    parser.add_argument("--subs", dest="subs_override", help="Override subtitles file (ass)")
+    args = parser.parse_args()
+
+    if args.subs_override and not os.path.exists(args.subs_override):
+        print(f"Error: 指定された字幕ファイルが見つかりません: {args.subs_override}", file=sys.stderr)
+        sys.exit(1)
+
+    work_dir = tempfile.mkdtemp(prefix="burn_subs_")
+    print(f"Extracting {args.keyframes} -> {work_dir}")
+    with zipfile.ZipFile(args.keyframes) as z:
+        z.extractall(work_dir)
+
+    inputs_txt = os.path.join(work_dir, "inputs.txt")
+    images_with_durations = read_images_with_durations(inputs_txt)
+    print(f"Images: {[f for f, _ in images_with_durations]}")
+
+    first_img_path = os.path.join(work_dir, images_with_durations[0][0])
+    with Image.open(first_img_path) as probe:
+        img_w, img_h = probe.size
+    print(f"Image size: {img_w}x{img_h}")
+
+    subtitle_file = args.subs_override or os.path.join(work_dir, "subtitles.ass")
+    subs_raw = pysubs2.load(subtitle_file)
+
+    play_res_y = int(subs_raw.info.get("PlayResY", "1080"))
+    scale = img_h / play_res_y
+
+    style = subs_raw.styles.get("Karaoke") or list(subs_raw.styles.values())[0]
+    font_size = int(style.fontsize * scale)
+    margin_v = int(style.marginv * scale)
+    outline = max(1, int(style.outline * scale))
+    primary = color_to_rgb(style.primarycolor)
+    secondary = color_to_rgb(style.secondarycolor)
+    outline_color = color_to_rgb(style.outlinecolor)
+
+    print(f"Font size: {font_size}, MarginV: {margin_v}, Outline: {outline}")
+    print(f"Primary: {primary}, Secondary: {secondary}")
+
+    font = load_font(font_size)
+    timeline, total_dur = build_timeline(work_dir, images_with_durations)
+    events = [(e.start / 1000.0, e.end / 1000.0, e.text) for e in subs_raw]
+    transitions = collect_transition_times(events, total_dur)
+    print(f"Total transition segments: {len(transitions) - 1}")
+
+    os.makedirs(FRAMES_DIR, exist_ok=True)
+    concat_lines = build_concat_lines(
+        transitions,
+        timeline,
+        events,
+        {},
+        font,
+        (img_w, img_h),
+        margin_v,
+        outline,
+        primary,
+        secondary,
+        outline_color,
+    )
+
+    concat_txt = os.path.join(FRAMES_DIR, "concat.txt")
+    with open(concat_txt, "w") as f:
+        f.write("\n".join(concat_lines))
+
+    result = run_ffmpeg(concat_txt, args.audio, args.output)
+
+    if result.returncode == 0:
+        size_mb = os.path.getsize(args.output) / 1024 / 1024
+        print(f"Done! {args.output} ({size_mb:.1f} MB)")
+    else:
+        print(f"ffmpeg error:\n{result.stderr[-3000:]}")
+
+
+if __name__ == "__main__":
+    main()
