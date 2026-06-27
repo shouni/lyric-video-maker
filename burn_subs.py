@@ -17,7 +17,6 @@ from PIL import Image, ImageDraw, ImageFont
 import pysubs2
 
 
-FRAMES_DIR = "frames_tmp"
 FONT_CANDIDATES = [
     "/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc",
     os.path.expanduser("~/Library/Fonts/SourceHanSans-VF.otf.ttc"),
@@ -26,6 +25,16 @@ FONT_CANDIDATES = [
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     "/Library/Fonts/Arial Unicode.ttf",
 ]
+
+
+def safe_extract(zip_file, target_dir):
+    """Extract zip contents, rejecting any path that escapes target_dir."""
+    abs_target = os.path.abspath(target_dir) + os.sep
+    for member in zip_file.infolist():
+        dest = os.path.abspath(os.path.join(abs_target, member.filename))
+        if not dest.startswith(abs_target):
+            raise ValueError(f"Attempted path traversal in zip: {member.filename}")
+    zip_file.extractall(target_dir)
 
 
 def color_to_rgb(c):
@@ -183,6 +192,7 @@ def build_concat_lines(
     primary,
     secondary,
     outline_color,
+    frames_dir,
     img_cache=None,
 ):
     """Render unique subtitle states and return ffmpeg concat file lines."""
@@ -214,7 +224,7 @@ def build_concat_lines(
         if state_key not in rendered_cache:
             base = os.path.splitext(os.path.basename(img_file))[0]
             evt_start = str(evt[0] if evt else "x").replace(".", "_")
-            frame_path = os.path.join(FRAMES_DIR, f"frame_{base}_{evt_start}_{n_hl}.png")
+            frame_path = os.path.join(frames_dir, f"frame_{base}_{evt_start}_{n_hl}.png")
             img = render_frame(
                 img_file,
                 evt,
@@ -249,6 +259,7 @@ def run_ffmpeg(concat_txt, audio, output):
     return subprocess.run(
         [
             "ffmpeg", "-y",
+            "-loglevel", "error",
             "-f", "concat", "-safe", "0",
             "-i", concat_txt,
             "-i", audio,
@@ -276,7 +287,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="burn_subs_") as work_dir:
         print(f"Extracting {args.keyframes} -> {work_dir}")
         with zipfile.ZipFile(args.keyframes) as z:
-            z.extractall(work_dir)
+            safe_extract(z, work_dir)
 
         inputs_txt = os.path.join(work_dir, "inputs.txt")
         images_with_durations = read_images_with_durations(inputs_txt)
@@ -310,7 +321,8 @@ def main():
         transitions = collect_transition_times(events, total_dur)
         print(f"Total transition segments: {len(transitions) - 1}")
 
-        os.makedirs(FRAMES_DIR, exist_ok=True)
+        frames_dir = os.path.join(work_dir, "frames")
+        os.makedirs(frames_dir, exist_ok=True)
         concat_lines = build_concat_lines(
             transitions,
             timeline,
@@ -322,9 +334,10 @@ def main():
             primary,
             secondary,
             outline_color,
+            frames_dir,
         )
 
-        concat_txt = os.path.join(FRAMES_DIR, "concat.txt")
+        concat_txt = os.path.join(frames_dir, "concat.txt")
         with open(concat_txt, "w") as f:
             f.write("\n".join(concat_lines))
 
