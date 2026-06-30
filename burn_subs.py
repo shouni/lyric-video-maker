@@ -61,7 +61,7 @@ def parse_karaoke(raw_text):
     cs = 0
     for m in re.finditer(r'\{\\k(\d+)\}([^{]*)', raw_text):
         k = int(m.group(1))
-        text = m.group(2)
+        text = re.sub(r'\\[nNh]', '', m.group(2))
         segments.append((cs, cs + k, text))
         cs += k
     return segments
