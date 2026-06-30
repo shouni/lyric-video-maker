@@ -65,7 +65,8 @@ def main():
         subs_orig = pysubs2.load(args.subtitles_in)
     orig_events = []
     for event in subs_orig:
-        plain = re.sub(r'\{[^}]*\}', '', event.text).strip()
+        plain = re.sub(r'\{[^}]*\}', '', event.text)
+        plain = re.sub(r'\\[nNh]', '', plain).strip()
         if plain:
             orig_events.append(plain)
 
@@ -119,7 +120,8 @@ def main():
 
     valid_line_idx = 0
     for event in subs_orig:
-        plain = re.sub(r'\{[^}]*\}', '', event.text).strip()
+        plain = re.sub(r'\{[^}]*\}', '', event.text)
+        plain = re.sub(r'\\[nNh]', '', plain).strip()
 
         if not plain:
             # テキストを持たないイベント（空行やタグのみ）はそのまま保持
