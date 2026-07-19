@@ -2,7 +2,10 @@
 """音声からカラオケタイミングを取得し、ASS字幕を再生成する。
 
 Usage:
-    python3 align_subtitles.py <audio.mp3> <keyframes.zip|subtitles.ass> [output.ass]
+    python3 align_subtitles.py <audio.mp3> <keyframes.zip|subtitles.ass|lyrics.txt> [output.ass]
+
+歌詞入力は keyframes.zip 内の subtitles.ass、単体の ASS ファイル、
+またはプレーンテキスト（1行=1字幕行、空行は無視）を受け付ける。
 """
 
 import re
@@ -43,11 +46,52 @@ def ms(sec):
     return int(sec * 1000)
 
 
+def subs_from_txt(path):
+    """プレーンテキスト歌詞（1行=1字幕行）から ASS を合成する。
+
+    スタイルは既存の subtitles.ass と同じ Karaoke スタイル
+    （Arial 64px、黄色ハイライト、PlayRes 1920x1080）で作成し、
+    burn_subs.py がそのまま読める形にする。
+    イベントの時刻は仮置き（アライメントで上書きされる）。
+    """
+    with open(path, encoding="utf-8") as f:
+        lines = [line.strip() for line in f if line.strip()]
+    if not lines:
+        raise SystemExit(f"Error: 歌詞テキストが空です: {path}")
+
+    subs = pysubs2.SSAFile()
+    subs.info["PlayResX"] = "1920"
+    subs.info["PlayResY"] = "1080"
+    subs.styles["Karaoke"] = pysubs2.SSAStyle(
+        fontname="Arial",
+        fontsize=64,
+        primarycolor=pysubs2.Color(255, 255, 0),    # &H0000FFFF 黄
+        secondarycolor=pysubs2.Color(255, 255, 255),  # &H00FFFFFF 白
+        outlinecolor=pysubs2.Color(0, 0, 0),
+        backcolor=pysubs2.Color(0, 0, 0, 128),
+        bold=True,
+        outline=3,
+        shadow=1,
+        alignment=pysubs2.Alignment.BOTTOM_CENTER,
+        marginl=10,
+        marginr=10,
+        marginv=80,
+    )
+    for i, line in enumerate(lines):
+        subs.append(pysubs2.SSAEvent(
+            start=i * 5000,
+            end=(i + 1) * 5000,
+            style="Karaoke",
+            text=line,
+        ))
+    return subs
+
+
 def main():
     """Align existing subtitle text to audio and write a new karaoke-timed ASS file."""
     parser = argparse.ArgumentParser(description="音声からカラオケタイミングを取得し、ASS字幕を再生成する。")
     parser.add_argument("audio", help="Input audio file (mp3)")
-    parser.add_argument("subtitles_in", help="Input keyframes ZIP or subtitles ASS file")
+    parser.add_argument("subtitles_in", help="Input keyframes ZIP, subtitles ASS, or plain lyrics TXT file")
     parser.add_argument("subtitles_out", nargs="?", default="subtitles_aligned.ass", help="Output subtitles file (ass)")
     parser.add_argument("--model", default="large-v3", help="Whisper model size (e.g., base, small, medium, large-v3)")
     parser.add_argument("--language", default="ja", help="Lyrics language code passed to Whisper (e.g., ja, en)")
@@ -56,8 +100,10 @@ def main():
     audio = args.audio
     ass_out = args.subtitles_out
 
-    # --- 元のASS読み込み（ZIP または ASS ファイルを受け付ける）---
-    if args.subtitles_in.endswith(".zip"):
+    # --- 元のASS読み込み（ZIP・ASS・プレーンテキスト歌詞を受け付ける）---
+    if args.subtitles_in.endswith(".txt"):
+        subs_orig = subs_from_txt(args.subtitles_in)
+    elif args.subtitles_in.endswith(".zip"):
         with zipfile.ZipFile(args.subtitles_in) as zf:
             names = zf.namelist()
             if "subtitles.ass" not in names:

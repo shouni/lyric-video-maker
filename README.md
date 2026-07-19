@@ -9,17 +9,21 @@
 
 **Lyric Video Maker** は、MP3 音声ファイルとキーフレーム ZIP ファイルから、**カラオケ字幕付き MP4 動画**を生成する Python スクリプト群です。
 
-ワークフローは 2 段階に分かれています。
+ワークフローは 3 段階に分かれています。
 
 ```
 ① align_subtitles.py
-   audio.mp3 + keyframes.zip  →  カラオケタイミング付き ASS（\k タグ）
+   audio.mp3 + keyframes.zip|subtitles.ass|lyrics.txt  →  カラオケタイミング付き ASS（\k タグ）
 
 ② burn_subs.py
    audio.mp3 + keyframes.zip (+ ASS)  →  output.mp4（カラオケ字幕付き）
+
+③ make_cover.py（任意）
+   output.mp4  →  カバー画像 2 枚（YouTube サムネイル用 16:9 / ショート用 9:16）
 ```
 
 既にタイミング済みの ASS がある場合は ② だけ実行すれば OK です。
+歌詞がプレーンテキスト（.txt）しかない場合も ① にそのまま渡せます。
 
 ---
 
@@ -30,6 +34,7 @@
 - [stable-ts](https://github.com/jianfch/stable-ts) を使って Whisper の推論結果を文字レベルに分解します。
 - ZIP 内の ASS から歌詞テキストだけを抽出して Whisper にアライメントさせ、句読点・記号は直前の文字の `\k` に吸収させます。
 - 出力は pysubs2 互換の ASS ファイルで、スタイル情報は元ファイルから引き継ぎます。
+- **プレーンテキスト歌詞対応**: `.txt`（1行=1字幕行、空行は無視）を渡すと、既定の Karaoke スタイル（Arial 64px・黄色ハイライト・PlayRes 1920x1080）で ASS を自動合成してからアライメントします。**行の区切りがそのまま字幕の行割りになる**ため、歌唱単位で改行してください。
 - **歌い出し対応**: 1行目のみ、元 ASS の開始時刻が Whisper の判定より **0〜3秒だけ早い**場合に限り、元 ASS の開始時刻を採用します。3秒を超える差がある場合や Whisper の方が早い場合は Whisper の判定を使用します。元 ASS の1行目 Start を歌い出しに合わせておくと正確に表示されます。
 - **繰り返し歌唱対応**: AI 音源が同じ歌詞を繰り返す場合、各行の終了時刻を次行開始直前まで延長し、繰り返し中も現在の歌詞を表示し続けます。
 
@@ -38,6 +43,15 @@
 - `\k` タグを解析し、文字単位でハイライト色（黄）と待機色（白）を切り替えます。
 - 文字ごとの遷移タイミングをすべて算出し、状態が変わるフレームのみを描画します。
 - **フォント**: macOS 標準の**ヒラギノ角ゴシック W7**を最優先で使用します。見つからない場合は**源ノ角ゴシック**（Source Han Sans VF）にフォールバックします（SIL Open Font License、YouTube 商用利用可）。Source Han Sans VF のインストールは `brew install --cask font-source-han-sans-vf`。
+
+### 🖼️ カバー画像の自動生成（make_cover.py）
+
+- 完成した MP4 の最初のフレームを ffmpeg で抽出し、タイトルとアーティスト名を合成した画像を 2 枚出力します。
+  - `cover_youtube.png`（1280x720）: YouTube サムネイル推奨サイズ
+  - `cover_short.png`（1080x1920）: ぼかし+減光した背景の中央に 16:9 フレームを重ねたショート用
+- タイトル省略時は **MP4 の親フォルダ名**を自動で使用します。アーティスト名の既定は `Digital Armor Style`。
+- 白タイトル+ダークストローク+シャドウ、アーティスト名は金色。長いタイトルは幅に収まるまで自動縮小します。
+- フォント探索は `burn_subs.py` の `load_font` をそのまま利用しているため、字幕と同じフォントで描画されます。
 
 ### ⚡ 差分描画による高速処理
 
@@ -82,10 +96,26 @@ python3 align_subtitles.py input/audio.mp3 input/keyframes.zip input/subtitles_a
 python3 burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4 --subs input/subtitles_aligned.ass
 ```
 
+**歌詞が .txt しかない場合:**
+
+```sh
+# ① タイミング生成（lyrics.txt は 1行=1字幕行）
+python3 align_subtitles.py input/audio.mp3 input/lyrics.txt input/subtitles_aligned.ass
+
+# ② 動画生成
+python3 burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4 --subs input/subtitles_aligned.ass
+```
+
 **簡易版（ZIP 内の ASS タイミングをそのまま使う）:**
 
 ```sh
 python3 burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4
+```
+
+**③ カバー画像生成（任意）:**
+
+```sh
+python3 make_cover.py output/output.mp4 --title "曲名"
 ```
 
 ---
@@ -97,9 +127,10 @@ python3 burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4
 | 引数 | 必須 | 説明 |
 | --- | --- | --- |
 | `audio.mp3` | ✅ | アライメント対象の音声ファイル |
-| `keyframes.zip` または `subtitles.ass` | ✅ | ZIP を渡すと内部の `subtitles.ass` を自動抽出。ASS ファイルを直接渡すことも可 |
+| `keyframes.zip` / `subtitles.ass` / `lyrics.txt` | ✅ | ZIP を渡すと内部の `subtitles.ass` を自動抽出。ASS ファイル直接、またはプレーンテキスト歌詞（1行=1字幕行）も可 |
 | `output.ass` | ➖ | 出力 ASS ファイル名（省略時: `subtitles_aligned.ass`）|
 | `--model` | ➖ | Whisper モデルサイズ（`base` / `small` / `medium` / `large-v3`、省略時: `large-v3`）|
+| `--language` | ➖ | Whisper に渡す歌詞の言語コード（省略時: `ja`）|
 
 **注意:** 入力 ASS の歌詞行数と Whisper が検出した文字数が一致しない場合はエラーで停止します。その場合は歌詞テキストの表記（スペース・句読点）を Whisper の出力に合わせて調整してください。
 
@@ -111,6 +142,15 @@ python3 burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4
 | `keyframes.zip` | ✅ | PNG 画像・`inputs.txt`・`subtitles.ass` を含む ZIP |
 | `output.mp4` | ➖ | 出力ファイル名（省略時: `output.mp4`）|
 | `--subs <subtitles.ass>` | ➖ | ZIP 内の字幕を上書きする ASS ファイル |
+
+### make_cover.py
+
+| 引数 | 必須 | 説明 |
+| --- | --- | --- |
+| `video.mp4` | ✅ | 入力 MP4（最初のフレームを使用） |
+| `--title` | ➖ | タイトル（省略時: MP4 の親フォルダ名）|
+| `--artist` | ➖ | アーティスト名（省略時: `Digital Armor Style`）|
+| `--outdir` | ➖ | 出力フォルダ（省略時: MP4 と同じフォルダ）|
 
 ---
 
