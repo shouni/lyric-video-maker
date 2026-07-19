@@ -50,6 +50,7 @@ def main():
     parser.add_argument("subtitles_in", help="Input keyframes ZIP or subtitles ASS file")
     parser.add_argument("subtitles_out", nargs="?", default="subtitles_aligned.ass", help="Output subtitles file (ass)")
     parser.add_argument("--model", default="large-v3", help="Whisper model size (e.g., base, small, medium, large-v3)")
+    parser.add_argument("--language", default="ja", help="Lyrics language code passed to Whisper (e.g., ja, en)")
     args = parser.parse_args()
 
     audio = args.audio
@@ -82,7 +83,7 @@ def main():
     model = stable_whisper.load_model(args.model)
 
     print("アライメント実行中...")
-    result = model.align(audio, text_to_align, language="ja")
+    result = model.align(audio, text_to_align, language=args.language)
 
     # adjust_by_silence は音楽トラックでは逆効果になるため一旦無効化
     # result = result.adjust_by_silence(audio, vad=True)
