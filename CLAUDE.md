@@ -16,6 +16,9 @@ Makefile やテストスイートは無い。フラットな Python スクリプ
 # ② 字幕焼き込み: 音声 + keyframes.zip (+ ASS) → MP4
 .venv/bin/python burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4 --subs input/subtitles_aligned.ass
 
+# ②' 完成済み動画に1行スタイル字幕を焼き込み（映像保持、line モード専用）
+.venv/bin/python burn_subs_video.py input/video.mp4 subtitles_aligned.ass out.mp4 --style-file styles/rock.json
+
 # ③ カバー画像: MP4 の最初のフレーム → cover_youtube.png (1280x720) + cover_short.png (1080x1920)
 .venv/bin/python make_cover.py output/output.mp4 --title "曲名"
 ```
@@ -39,6 +42,16 @@ stable-ts の `model.align()` で**既存の歌詞テキストを音声のタイ
 ### burn_subs.py — 差分描画によるカラオケ焼き込み
 
 `\k` タグを解析し、**字幕状態が変化する時刻だけ**フレームを描画して ffmpeg concat で結合する。状態キーは（背景画像, 字幕イベント, ハイライト済み文字数）で、同一状態のフレームはキャッシュ再利用。フォントサイズ・マージン・アウトラインは ASS の `PlayResY` と実画像解像度の比率で自動スケールする。スタイルは `Karaoke` という名前のスタイルを優先して読む。
+
+`--style-file`（JSON、`styles/` にプリセット）で描画スタイルを上書きできる。`mode: "line"` はカラオケハイライトなしの1行表示で、文字単位の遷移を集めないため状態数が大幅に減る（サンプルで 223→33）。px 値はすべて PlayResY 基準で指定し実解像度へスケールする、という既存の規約に従うこと。不正値は警告してフォールバックする設計（動画生成自体は失敗させない）。
+
+line モードの `render_line_frame` は幅に収まらない行を自動調整する（`fit_line_layout`: 縮小率 `LINE_SHRINK_FLOOR` までは1行のまま縮小、それ以下なら `best_split` で2行折り返し。英語はスペース位置のみ、日本語は全文字境界から幅バランス最良点を選ぶ）。透過 RGBA レイヤーを渡すと透過を保って返す（burn_subs_video.py のオーバーレイ用。box 描画時にモードを維持する実装に依存している）。
+
+### burn_subs_video.py — 完成済み動画への字幕焼き込み
+
+スライドショーではなく実写 MV 動画（映像・カメラワーク保持）に字幕を乗せる。行ごとに `render_line_frame` で透過 PNG を作り、ffmpeg の `overlay` + `enable='between(t,start,end)'` チェーンで時間指定合成する（音声はコピー）。行の重なりは `build_windows` が「先の行優先」（burn_subs の `event_at` と同じ規則）で解消する。line モード専用（カラオケの文字単位状態をオーバーレイにすると数百入力になるため非対応）。
+
+**注意**: 出力 MP4 は「1フレームが数秒続く」特殊構造（キーフレームも先頭のみ）のため、`ffmpeg -ss` でのフレーム取り出しは別のフレームを拾って「字幕が無い」ように見えることがある。検証には `-vf "select=eq(n\,N)" -vsync 0` でフレーム番号指定を使うこと。
 
 フォントは `FONT_CANDIDATES` の順に探索（ヒラギノ角ゴ W7 が最優先）。`load_font()` は make_cover.py からも import されており、字幕とカバーのフォントを一致させている。
 
