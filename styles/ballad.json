@@ -1,0 +1,9 @@
+{
+  "mode": "line",
+  "font_size": 64,
+  "position": "center",
+  "letter_spacing": 14,
+  "primary_color": "#FFF6E0",
+  "outline_color": "#2A2A2A",
+  "outline": 3
+}

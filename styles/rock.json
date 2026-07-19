@@ -1,0 +1,10 @@
+{
+  "mode": "line",
+  "font_size": 88,
+  "position": "bottom",
+  "margin_v": 70,
+  "letter_spacing": 4,
+  "primary_color": "#FFFFFF",
+  "outline_color": "#CC0000",
+  "outline": 6
+}

@@ -16,7 +16,10 @@
    audio.mp3 + keyframes.zip|subtitles.ass|lyrics.txt  →  カラオケタイミング付き ASS（\k タグ）
 
 ② burn_subs.py
-   audio.mp3 + keyframes.zip (+ ASS)  →  output.mp4（カラオケ字幕付き）
+   audio.mp3 + keyframes.zip (+ ASS)  →  output.mp4（カラオケ字幕付きスライドショー）
+
+②' burn_subs_video.py
+   video.mp4 + ASS  →  映像を保ったまま1行スタイル字幕を焼き込んだ MP4
 
 ③ make_cover.py（任意）
    output.mp4  →  カバー画像 2 枚（YouTube サムネイル用 16:9 / ショート用 9:16）
@@ -42,6 +45,30 @@
 
 - `\k` タグを解析し、文字単位でハイライト色（黄）と待機色（白）を切り替えます。
 - 文字ごとの遷移タイミングをすべて算出し、状態が変わるフレームのみを描画します。
+
+### 🎬 スタイルファイルによる MV 風描画（--style-file）
+
+- `--style-file style.json` で描画スタイルを上書きできます。`styles/` にプリセット（`rock.json` / `minimal.json` / `ballad.json`）あり。
+- `"mode": "line"` にするとカラオケハイライトなしの **1行表示**になり、配置（`position`: top/center/bottom）・字間（`letter_spacing`）・背景座布団（`box`）が使えます。描画状態が行単位になるためカラオケより高速です。
+- line モードでは幅に収まらない行を**自動調整**します: まず1行のままフォント縮小を試み、縮小率が 70% を下回るほど長い行は**2行に折り返し**ます（英語はスペース位置、日本語は幅バランスの良い文字境界で分割）。
+- px 値（`font_size` / `margin_v` / `outline` / `letter_spacing` / `box.pad`）は **PlayResY（1080）基準**で指定し、実解像度へ自動スケールされます。色は `#RRGGBB`。不正値は警告して ASS の値にフォールバックします。
+
+```json
+{
+  "mode": "line",
+  "font_size": 88,
+  "position": "bottom",
+  "margin_v": 70,
+  "letter_spacing": 4,
+  "primary_color": "#FFFFFF",
+  "outline_color": "#CC0000",
+  "outline": 6,
+  "box": {"color": "#000000", "alpha": 0.35, "pad": 22},
+  "font": "/path/to/font.ttf"
+}
+```
+
+（`box` / `font` は任意。`mode` 省略時は従来どおりカラオケ描画で、色やサイズの上書きのみ適用されます）
 - **フォント**: macOS 標準の**ヒラギノ角ゴシック W7**を最優先で使用します。見つからない場合は**源ノ角ゴシック**（Source Han Sans VF）にフォールバックします（SIL Open Font License、YouTube 商用利用可）。Source Han Sans VF のインストールは `brew install --cask font-source-han-sans-vf`。
 
 ### 🖼️ カバー画像の自動生成（make_cover.py）
@@ -112,6 +139,12 @@ python3 burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4 --sub
 python3 burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4
 ```
 
+**②' 完成済み動画（MV）にスタイル字幕を焼き込む:**
+
+```sh
+python3 burn_subs_video.py input/video.mp4 input/subtitles_aligned.ass output/video_with_lyrics.mp4 --style-file styles/rock.json
+```
+
 **③ カバー画像生成（任意）:**
 
 ```sh
@@ -142,6 +175,18 @@ python3 make_cover.py output/output.mp4 --title "曲名"
 | `keyframes.zip` | ✅ | PNG 画像・`inputs.txt`・`subtitles.ass` を含む ZIP |
 | `output.mp4` | ➖ | 出力ファイル名（省略時: `output.mp4`）|
 | `--subs <subtitles.ass>` | ➖ | ZIP 内の字幕を上書きする ASS ファイル |
+| `--style-file <style.json>` | ➖ | 描画スタイルを上書きする JSON（`styles/` にプリセットあり）|
+
+### burn_subs_video.py
+
+| 引数 | 必須 | 説明 |
+| --- | --- | --- |
+| `video.mp4` | ✅ | 入力動画（映像はそのまま保持される） |
+| `subtitles.ass` | ✅ | タイミング付き ASS（`\k` タグは無視し行の開始/終了のみ使用） |
+| `output.mp4` | ➖ | 出力ファイル名（省略時: `output_video.mp4`）|
+| `--style-file <style.json>` | ➖ | 描画スタイル JSON（line モード専用。`mode: "karaoke"` は無視）|
+
+行ごとの字幕を透過 PNG に描画し、ffmpeg の `overlay` + `enable='between(t,...)'` で時間指定合成します。音声は再エンコードせずコピーします。
 
 ### make_cover.py
 
