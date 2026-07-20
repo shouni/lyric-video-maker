@@ -180,6 +180,19 @@ def best_split(draw, text, font, spacing):
     return best
 
 
+def shrink_to_fit(draw, lines, font, spacing, max_w):
+    """指定した行群が max_w に収まるまでフォントを縮小する。"""
+    base_size = getattr(font, "size", 0) or 0
+    size = base_size
+    f = font
+    while size > 12:
+        f = font.font_variant(size=size)
+        if all(measure_line(draw, ln, f, spacing) <= max_w for ln in lines):
+            break
+        size -= 2
+    return f, size
+
+
 def fit_line_layout(draw, text, cfg):
     """テキストが画像幅に収まるフォントと行リスト（1〜2行）を決める。
 
@@ -192,25 +205,64 @@ def fit_line_layout(draw, text, cfg):
     if base_size <= 0 or measure_line(draw, text, font, cfg.letter_spacing) <= max_w:
         return font, [text]
 
-    def shrink_to_fit(lines):
-        size = base_size
-        f = font
-        while size > 12:
-            f = font.font_variant(size=size)
-            if all(measure_line(draw, ln, f, cfg.letter_spacing) <= max_w for ln in lines):
-                break
-            size -= 2
-        return f, size
-
-    _, size_one_line = shrink_to_fit([text])
+    _, size_one_line = shrink_to_fit(draw, [text], font, cfg.letter_spacing, max_w)
     if size_one_line >= base_size * LINE_SHRINK_FLOOR:
         return font.font_variant(size=size_one_line), [text]
 
     l1, l2 = best_split(draw, text, font, cfg.letter_spacing)
     if not l2:
         return font.font_variant(size=size_one_line), [text]
-    fitted, _ = shrink_to_fit([l1, l2])
+    fitted, _ = shrink_to_fit(draw, [l1, l2], font, cfg.letter_spacing, max_w)
     return fitted, [l1, l2]
+
+
+def best_split_segs(draw, segs, font, spacing):
+    """カラオケ \\k セグメント列を2行に分割する分割点を返す（best_split のセグメント版）。
+
+    セグメント内部では割らない（既存ASSは句読点や語末スペースが直前セグメントに
+    吸収されているため、セグメント境界＝best_split の文字/スペース境界に対応する）。
+    """
+    texts = [t for _, _, t in segs]
+    candidates = [i + 1 for i, t in enumerate(texts[:-1]) if t.endswith(" ")]
+    if not candidates:
+        candidates = list(range(1, len(segs)))
+    best = (segs, [])
+    best_w = None
+    for idx in candidates:
+        segs1, segs2 = segs[:idx], segs[idx:]
+        text1 = "".join(texts[:idx]).strip()
+        text2 = "".join(texts[idx:]).strip()
+        if not text1 or not text2:
+            continue
+        w = max(measure_line(draw, text1, font, spacing), measure_line(draw, text2, font, spacing))
+        if best_w is None or w < best_w:
+            best_w = w
+            best = (segs1, segs2)
+    return best
+
+
+def fit_karaoke_layout(draw, segs, cfg):
+    """カラオケ \\k セグメント列が画像幅に収まるフォントと行分割（1〜2行）を決める。
+
+    方針は fit_line_layout と同じ（先に縮小、それでも収まらなければ2行に折り返す）。
+    """
+    max_w = cfg.img_size[0] * LINE_MAX_WIDTH_RATIO
+    font = cfg.font
+    base_size = getattr(font, "size", 0) or 0
+    full_text = "".join(t for _, _, t in segs)
+    if base_size <= 0 or measure_line(draw, full_text, font, 0) <= max_w:
+        return font, [segs]
+
+    _, size_one_line = shrink_to_fit(draw, [full_text], font, 0, max_w)
+    if size_one_line >= base_size * LINE_SHRINK_FLOOR:
+        return font.font_variant(size=size_one_line), [segs]
+
+    segs1, segs2 = best_split_segs(draw, segs, font, 0)
+    if not segs2:
+        return font.font_variant(size=size_one_line), [segs]
+    line_texts = ["".join(t for _, _, t in segs1), "".join(t for _, _, t in segs2)]
+    fitted, _ = shrink_to_fit(draw, line_texts, font, 0, max_w)
+    return fitted, [segs1, segs2]
 
 
 def render_line_frame(img, text, cfg):
@@ -297,28 +349,33 @@ def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
     n_highlighted = sum(1 for (s, _e, _text) in segs if elapsed_cs >= s)
 
     draw = ImageDraw.Draw(img)
-    full_text = "".join(t for _, _, t in segs)
+    font, seg_lines = fit_karaoke_layout(draw, segs, cfg)
 
-    bbox = draw.textbbox((0, 0), full_text, font=cfg.font)
-    total_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
+    line_texts = ["".join(t for _, _, t in line) for line in seg_lines]
+    line_bboxes = [draw.textbbox((0, 0), txt, font=font) for txt in line_texts]
 
-    x = (img_w - total_w) // 2
-    y = img_h - text_h - cfg.margin_v
+    line_gap = int(getattr(font, "size", 20) * 0.3)
+    block_h = sum(b[3] - b[1] for b in line_bboxes) + line_gap * (len(seg_lines) - 1)
+    y = img_h - block_h - cfg.margin_v
 
-    cur_x = x
-    for i, (_s, _e, seg_text) in enumerate(segs):
-        color = cfg.primary if i < n_highlighted else cfg.secondary
-        draw.text(
-            (cur_x, y),
-            seg_text,
-            font=cfg.font,
-            fill=color,
-            stroke_width=cfg.outline,
-            stroke_fill=cfg.outline_color,
-        )
-        seg_bbox = draw.textbbox((0, 0), seg_text, font=cfg.font)
-        cur_x += seg_bbox[2] - seg_bbox[0]
+    idx = 0
+    for line, txt, bbox in zip(seg_lines, line_texts, line_bboxes):
+        total_w = bbox[2] - bbox[0]
+        cur_x = (img_w - total_w) // 2
+        for _s, _e, seg_text in line:
+            color = cfg.primary if idx < n_highlighted else cfg.secondary
+            draw.text(
+                (cur_x, y),
+                seg_text,
+                font=font,
+                fill=color,
+                stroke_width=cfg.outline,
+                stroke_fill=cfg.outline_color,
+            )
+            seg_bbox = draw.textbbox((0, 0), seg_text, font=font)
+            cur_x += seg_bbox[2] - seg_bbox[0]
+            idx += 1
+        y += (bbox[3] - bbox[1]) + line_gap
 
     return img
 
