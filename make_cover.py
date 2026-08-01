@@ -19,7 +19,7 @@ import tempfile
 
 from PIL import Image, ImageDraw, ImageFilter
 
-from burn_subs import load_font
+from burn_subs import load_font, require_ffmpeg
 
 DEFAULT_ARTIST = "Digital Armor Style"
 
@@ -34,15 +34,21 @@ MAX_WIDTH_RATIO = 0.92  # タイトル1行が占めてよい画像幅の上限�
 REFERENCE_WIDTH = 1024.0  # ストローク幅・影オフセットの基準画像幅
 
 
-def extract_first_frame(video_path):
-    """ffmpegでMP4の最初のフレームをPNGとして抽出し、PIL Imageで返す。"""
+def extract_frame(video_path, at_sec=0.0):
+    """ffmpegでMP4の指定秒のフレームをPNGとして抽出し、PIL Imageで返す。
+
+    -ss は入力側ではなく出力側に置く。burn_subs.py の出力は「1フレームが数秒続く」
+    構造でキーフレームが先頭にしかなく、入力側シークでは別のフレームを拾うため。
+    """
     with tempfile.TemporaryDirectory() as tmp:
         frame_path = os.path.join(tmp, "frame.png")
-        subprocess.run(
-            ["ffmpeg", "-y", "-loglevel", "error", "-i", video_path,
-             "-frames:v", "1", "-q:v", "2", frame_path],
-            check=True,
-        )
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", video_path]
+        if at_sec > 0:
+            cmd += ["-ss", str(at_sec)]
+        cmd += ["-frames:v", "1", "-q:v", "2", frame_path]
+        subprocess.run(cmd, check=True)
+        if not os.path.exists(frame_path):
+            sys.exit(f"error: {at_sec}秒のフレームを取得できませんでした（動画の長さを超えていませんか）: {video_path}")
         return Image.open(frame_path).convert("RGB")
 
 
@@ -143,17 +149,24 @@ def main():
     parser.add_argument("--title", help="タイトル（省略時はMP4の親フォルダ名）")
     parser.add_argument("--artist", default=DEFAULT_ARTIST, help=f"アーティスト名（既定: {DEFAULT_ARTIST}）")
     parser.add_argument("--outdir", help="出力フォルダ（省略時はMP4と同じフォルダ）")
+    parser.add_argument(
+        "--at", type=float, default=0.0, metavar="SEC",
+        help="カバーに使うフレームの時刻（秒、既定: 0＝先頭。先頭が暗転のときに指定する）",
+    )
     args = parser.parse_args()
 
+    require_ffmpeg("ffmpeg")
     video_path = os.path.abspath(args.video)
     if not os.path.exists(video_path):
         sys.exit(f"error: video not found: {video_path}")
+    if args.at < 0:
+        sys.exit(f"error: --at は0以上で指定してください: {args.at}")
 
     title = args.title or os.path.basename(os.path.dirname(video_path))
     outdir = os.path.abspath(args.outdir) if args.outdir else os.path.dirname(video_path)
     os.makedirs(outdir, exist_ok=True)
 
-    frame = extract_first_frame(video_path)
+    frame = extract_frame(video_path, args.at)
 
     youtube = make_youtube_cover(frame, title, args.artist)
     youtube_path = os.path.join(outdir, "cover_youtube.png")

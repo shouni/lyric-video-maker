@@ -4,7 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-Makefile やテストスイートは無い。フラットな Python スクリプト3本のリポジトリで、実行がそのまま動作確認になる。
+Makefile は無い。フラットな Python スクリプト4本のリポジトリで、実行がそのまま動作確認になる。
+ffmpeg/Whisper を伴わない純粋ロジック（`tests/`）だけ pytest で押さえている。
+
+```bash
+.venv/bin/python -m pytest tests -q
+```
 
 依存は `.venv`（Python 3.9）にインストール済み。**必ず `.venv/bin/python` で実行する**こと。システム python3 には pysubs2 / stable-ts が無い。ffmpeg はシステムインストール（brew）。
 
@@ -19,8 +24,9 @@ Makefile やテストスイートは無い。フラットな Python スクリプ
 # ②' 完成済み動画に1行スタイル字幕を焼き込み（映像保持、line モード専用）
 .venv/bin/python burn_subs_video.py input/video.mp4 subtitles_aligned.ass out.mp4 --style-file styles/rock.json
 
-# ③ カバー画像: MP4 の最初のフレーム → cover_youtube.png (1280x720) + cover_short.png (1080x1920)
-.venv/bin/python make_cover.py output/output.mp4 --title "曲名"
+# ③ カバー画像: MP4 のフレーム → cover_youtube.png (1280x720) + cover_short.png (1080x1920)
+.venv/bin/python make_cover.py output/output.mp4 --title "曲名"        # 先頭フレーム
+.venv/bin/python make_cover.py output/output.mp4 --title "曲名" --at 8  # 8秒地点のフレーム
 ```
 
 動作確認を速くしたいときは `--model small` を使う（既定は `large-v3`。モデルは `~/.cache/whisper/` にキャッシュ済み）。`input/` にサンプル一式（mp3 + keyframes.zip + aligned ASS）があり、アライメントのテストに使える。
@@ -35,6 +41,8 @@ AP MV エコシステム（keyframes.zip を生成する側）のローカル後
 
 stable-ts の `model.align()` で**既存の歌詞テキストを音声のタイミングに割り当てる**。ゼロからの transcribe パスは無い。
 
+Whisper 呼び出し以外は純粋関数に分割してある（`load_source_subs` → `extract_lyric_lines` → `map_chars_to_lines` → `build_karaoke_text` → `build_aligned_subs` → `fill_repeat_gaps`）。ロジックを変えるときは `tests/test_align_subtitles.py` を先に更新すること。
+
 - 歌詞入力は3形式: keyframes.zip 内の `subtitles.ass` / 単体 ASS / プレーンテキスト。`.txt` の場合は `subs_from_txt()` が既定の Karaoke スタイル（Arial 64px・黄ハイライト・PlayRes 1920x1080、既存 subtitles.ass と同一値）で ASS を合成してから同じフローに乗せる。行の区切りがそのまま字幕の行割りになる。
 - **文字数照合が厳密**: 句読点・記号（`PUNCT_PATTERN`）を除いた歌詞の文字数と Whisper の検出文字数が一致しないと中断する。歌詞と歌唱のズレ（アドリブ・繰り返し省略）で失敗する設計。
 - 句読点は直前の文字の `\k` に時間ごと吸収させる。1行目のみ、元 ASS の開始が Whisper 判定より 0〜3 秒早い場合は元 ASS の開始時刻を採用（歌い出し対応）。行間ギャップは次行開始直前まで延長（繰り返し歌唱対応）。
@@ -42,6 +50,8 @@ stable-ts の `model.align()` で**既存の歌詞テキストを音声のタイ
 ### burn_subs.py — 差分描画によるカラオケ焼き込み
 
 `\k` タグを解析し、**字幕状態が変化する時刻だけ**フレームを描画して ffmpeg concat で結合する。状態キーは（背景画像, 字幕イベント, ハイライト済み文字数）で、同一状態のフレームはキャッシュ再利用。フォントサイズ・マージン・アウトラインは ASS の `PlayResY` と実画像解像度の比率で自動スケールする。スタイルは `Karaoke` という名前のスタイルを優先して読む。
+
+ASS スタイル + `--style-file` から `RenderConfig` を組み立てる処理は `build_render_config()` に集約しており、`burn_subs_video.py` も同じ関数を使う（`force_mode="line"` を渡す）。スタイル指定を増やすときはこの関数だけを直せば両方に反映される。
 
 `--style-file`（JSON、`styles/` にプリセット）で描画スタイルを上書きできる。`mode: "line"` はカラオケハイライトなしの1行表示で、文字単位の遷移を集めないため状態数が大幅に減る（サンプルで 223→33）。px 値はすべて PlayResY 基準で指定し実解像度へスケールする、という既存の規約に従うこと。不正値は警告してフォールバックする設計（動画生成自体は失敗させない）。
 
@@ -59,7 +69,7 @@ karaoke モード（既定）の `render_frame` も同じ方針の `fit_karaoke_
 
 ### make_cover.py — カバー画像生成
 
-MP4 の最初のフレームを ffmpeg で抽出し、Pillow でタイトル＋アーティスト名を合成。タイトル省略時は **MP4 の親フォルダ名**を使う（曲名フォルダに動画を置く運用が前提）。アーティスト名の既定は `Digital Armor Style`。長いタイトルは幅 92% に収まるまでフォント自動縮小。ショート版はぼかし+減光した背景の中央に 16:9 フレームを重ねる。
+MP4 のフレーム（既定は先頭、`--at SEC` で任意の時刻）を ffmpeg で抽出し、Pillow でタイトル＋アーティスト名を合成。`-ss` は出力側に置いている（burn_subs.py の出力はキーフレームが先頭にしかなく、入力側シークでは別のフレームを拾うため）。タイトル省略時は **MP4 の親フォルダ名**を使う（曲名フォルダに動画を置く運用が前提）。アーティスト名の既定は `Digital Armor Style`。長いタイトルは幅 92% に収まるまでフォント自動縮小。ショート版はぼかし+減光した背景の中央に 16:9 フレームを重ねる。
 
 `from burn_subs import load_font` している関係で pysubs2 まで transitively 必要になるため、これも `.venv` 経由での実行が必須。
 

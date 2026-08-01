@@ -73,7 +73,7 @@
 
 ### 🖼️ カバー画像の自動生成（make_cover.py）
 
-- 完成した MP4 の最初のフレームを ffmpeg で抽出し、タイトルとアーティスト名を合成した画像を 2 枚出力します。
+- 完成した MP4 のフレーム（既定は先頭。`--at 8` のように秒を指定すると任意の位置）を ffmpeg で抽出し、タイトルとアーティスト名を合成した画像を 2 枚出力します。
   - `cover_youtube.png`（1280x720）: YouTube サムネイル推奨サイズ
   - `cover_short.png`（1080x1920）: ぼかし+減光した背景の中央に 16:9 フレームを重ねたショート用
 - タイトル省略時は **MP4 の親フォルダ名**を自動で使用します。アーティスト名の既定は `Digital Armor Style`。
@@ -192,10 +192,11 @@ python3 make_cover.py output/output.mp4 --title "曲名"
 
 | 引数 | 必須 | 説明 |
 | --- | --- | --- |
-| `video.mp4` | ✅ | 入力 MP4（最初のフレームを使用） |
+| `video.mp4` | ✅ | 入力 MP4 |
 | `--title` | ➖ | タイトル（省略時: MP4 の親フォルダ名）|
 | `--artist` | ➖ | アーティスト名（省略時: `Digital Armor Style`）|
 | `--outdir` | ➖ | 出力フォルダ（省略時: MP4 と同じフォルダ）|
+| `--at <秒>` | ➖ | カバーに使うフレームの時刻（省略時: `0`＝先頭）。先頭が暗転している動画で指定する |
 
 ---
 
@@ -238,6 +239,17 @@ duration 50.000
 | [Pillow](https://pillow.readthedocs.io/) | PNG 画像への字幕描画 |
 | [pysubs2](https://pysubs2.readthedocs.io/) | ASS 字幕ファイルのパース・スタイル取得 |
 | [ffmpeg](https://ffmpeg.org/) | 動画エンコード・音声合成（システムインストール） |
+
+---
+
+## 🧪 テスト
+
+```sh
+pip install -r requirements-dev.txt
+python3 -m pytest tests -q
+```
+
+ffmpeg や Whisper を呼ばない純粋ロジック（`\k` タグの解析、行の自動折り返し、スタイル JSON の検証、歌詞と音声の文字照合、表示区間の重なり解消など）を対象にしています。動画の出来そのものは `input/` のサンプルで実行して確認してください。
 
 ---
 

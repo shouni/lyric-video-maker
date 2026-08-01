@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -44,6 +45,17 @@ HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
 def hex_to_rgb(value):
     """'#RRGGBB' を RGB タプルへ変換する。"""
     return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def require_ffmpeg(*tools):
+    """必要な外部コマンドの存在を確認する。無ければ導入方法を添えて中断する。
+
+    ffmpeg 不在時に subprocess の FileNotFoundError がそのまま出ると原因が分かりにくいため、
+    処理を始める前に確認する。
+    """
+    missing = [t for t in tools if shutil.which(t) is None]
+    if missing:
+        raise SystemExit(f"Error: {', '.join(missing)} が見つかりません（macOS: brew install ffmpeg）")
 
 
 FONT_CANDIDATES = [
@@ -148,6 +160,7 @@ def get_base_img(path, img_cache):
 
 LINE_MAX_WIDTH_RATIO = 0.92  # 1行が占めてよい画像幅の上限比率
 LINE_SHRINK_FLOOR = 0.7  # 1行のまま縮小してよい下限比。これ未満に縮むなら2行に折り返す
+MIN_FONT_SIZE = 12  # 自動縮小の下限（これ以上小さくすると判読できない）
 
 
 def measure_line(draw, text, font, spacing):
@@ -181,16 +194,19 @@ def best_split(draw, text, font, spacing):
 
 
 def shrink_to_fit(draw, lines, font, spacing, max_w):
-    """指定した行群が max_w に収まるまでフォントを縮小する。"""
-    base_size = getattr(font, "size", 0) or 0
-    size = base_size
-    f = font
-    while size > 12:
+    """指定した行群が max_w に収まるまでフォントを縮小する。
+
+    MIN_FONT_SIZE まで縮めても収まらない場合はそのサイズで諦める（読めない字幕を出すより
+    はみ出しを許容する）。返り値のフォントとサイズは常に一致する。
+    """
+    size = getattr(font, "size", 0) or 0
+    if size <= MIN_FONT_SIZE:
+        return font, size
+    while True:
         f = font.font_variant(size=size)
-        if all(measure_line(draw, ln, f, spacing) <= max_w for ln in lines):
-            break
+        if size <= MIN_FONT_SIZE or all(measure_line(draw, ln, f, spacing) <= max_w for ln in lines):
+            return f, size
         size -= 2
-    return f, size
 
 
 def fit_line_layout(draw, text, cfg):
@@ -494,6 +510,128 @@ def load_style_file(path):
     return style
 
 
+def pick_ass_style(subs, source=""):
+    """描画の土台にする ASS スタイルを選ぶ（Karaoke スタイル優先）。"""
+    style = subs.styles.get("Karaoke")
+    if style is not None:
+        return style
+    if not subs.styles:
+        raise SystemExit(f"Error: ASS にスタイル定義がありません: {source or '(subtitles)'}")
+    return next(iter(subs.styles.values()))
+
+
+def _parse_box(style_over, scale):
+    """スタイル JSON の box 指定を ((r, g, b, a), pad_px) へ変換する。無効なら None。"""
+    box_over = style_over.get("box")
+    if not isinstance(box_over, dict):
+        return None
+    box_color = box_over.get("color", "#000000")
+    if not (isinstance(box_color, str) and HEX_COLOR_RE.fullmatch(box_color)):
+        box_color = "#000000"
+    alpha = min(1.0, max(0.0, float(box_over.get("alpha", 0.4))))
+    pad = int(float(box_over.get("pad", 16)) * scale)
+    return ((*hex_to_rgb(box_color), int(alpha * 255)), pad)
+
+
+def build_render_config(subs, img_size, style_over, force_mode=None, subs_source=""):
+    """ASS スタイルと style.json の上書きから RenderConfig を組み立てる。
+
+    px 値（font_size / margin_v / outline / letter_spacing / box.pad）は ASS の PlayResY 基準で
+    指定されている前提で、実際の画像・動画の高さへスケールする。burn_subs.py（スライドショー）と
+    burn_subs_video.py（動画オーバーレイ）で同じ見た目になるよう、両者でこの関数を共有する。
+    force_mode を渡すと style.json の mode 指定を無視して固定する（動画側は line モード専用）。
+    """
+    img_w, img_h = img_size
+    play_res_y = int(subs.info.get("PlayResY", "1080"))
+    scale = img_h / play_res_y
+
+    ass_style = pick_ass_style(subs, subs_source)
+    font_size = int(ass_style.fontsize * scale)
+    margin_v = int(ass_style.marginv * scale)
+    outline = max(1, int(ass_style.outline * scale))
+    primary = color_to_rgb(ass_style.primarycolor)
+    secondary = color_to_rgb(ass_style.secondarycolor)
+    outline_color = color_to_rgb(ass_style.outlinecolor)
+
+    if "font_size" in style_over:
+        font_size = int(float(style_over["font_size"]) * scale)
+    if "margin_v" in style_over:
+        margin_v = int(float(style_over["margin_v"]) * scale)
+    if "outline" in style_over:
+        outline = max(0, int(float(style_over["outline"]) * scale))
+    if "primary_color" in style_over:
+        primary = hex_to_rgb(style_over["primary_color"])
+    if "secondary_color" in style_over:
+        secondary = hex_to_rgb(style_over["secondary_color"])
+    if "outline_color" in style_over:
+        outline_color = hex_to_rgb(style_over["outline_color"])
+
+    mode = force_mode or style_over.get("mode", "karaoke")
+    print(f"Mode: {mode}, Font size: {font_size}, MarginV: {margin_v}, Outline: {outline}")
+    print(f"Primary: {primary}, Secondary: {secondary}")
+
+    if "font" in style_over:
+        font = ImageFont.truetype(style_over["font"], font_size)
+        print(f"Font: {style_over['font']}")
+    else:
+        font = load_font(font_size)
+
+    return RenderConfig(
+        font=font,
+        img_size=(img_w, img_h),
+        margin_v=margin_v,
+        outline=outline,
+        primary=primary,
+        secondary=secondary,
+        outline_color=outline_color,
+        mode=mode,
+        position=style_over.get("position", "bottom"),
+        letter_spacing=int(float(style_over.get("letter_spacing", 0)) * scale),
+        box=_parse_box(style_over, scale),
+    )
+
+
+def extract_keyframes(zip_path, work_dir):
+    """keyframes.zip を展開し、(画像ファイル名, 表示秒数) の並びを返す。
+
+    ZIP の中身が想定と違う場合はトレースバックではなく原因の分かるメッセージで中断する。
+    """
+    print(f"Extracting {zip_path} -> {work_dir}")
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            safe_extract(z, work_dir)
+    except FileNotFoundError:
+        raise SystemExit(f"Error: keyframes ZIP が見つかりません: {zip_path}") from None
+    except zipfile.BadZipFile:
+        raise SystemExit(f"Error: keyframes ZIP を読み込めません（壊れているか ZIP ではありません）: {zip_path}") from None
+
+    inputs_txt = os.path.join(work_dir, "inputs.txt")
+    if not os.path.exists(inputs_txt):
+        raise SystemExit(f"Error: ZIP に inputs.txt が含まれていません: {zip_path}")
+
+    images_with_durations = read_images_with_durations(inputs_txt)
+    if not images_with_durations:
+        raise SystemExit(f"Error: inputs.txt に画像エントリがありません: {zip_path}")
+
+    missing = [name for name, _ in images_with_durations if not os.path.exists(os.path.join(work_dir, name))]
+    if missing:
+        raise SystemExit(f"Error: inputs.txt が参照する画像が ZIP にありません: {', '.join(missing[:5])}")
+    return images_with_durations
+
+
+def resolve_subtitles(work_dir, subs_override, keyframes):
+    """使用する ASS のパスを決める（--subs 優先、無ければ ZIP 内の subtitles.ass）。"""
+    if subs_override:
+        return subs_override
+    path = os.path.join(work_dir, "subtitles.ass")
+    if not os.path.exists(path):
+        raise SystemExit(
+            f"Error: ZIP に subtitles.ass が含まれていません: {keyframes}\n"
+            "       --subs でタイミング付き ASS を指定してください。"
+        )
+    return path
+
+
 def main():
     """Load inputs, render karaoke subtitle frames, and encode the output video."""
     parser = argparse.ArgumentParser(description="Burn ASS karaoke subtitles onto PNG images and create MP4.")
@@ -504,91 +642,31 @@ def main():
     parser.add_argument("--style-file", help="描画スタイルを上書きする JSON ファイル（styles/ にプリセットあり）")
     args = parser.parse_args()
 
+    require_ffmpeg("ffmpeg")
+    if not os.path.exists(args.audio):
+        raise SystemExit(f"Error: 音声ファイルが見つかりません: {args.audio}")
     if args.subs_override and not os.path.exists(args.subs_override):
-        print(f"Error: 指定された字幕ファイルが見つかりません: {args.subs_override}", file=sys.stderr)
-        sys.exit(1)
+        raise SystemExit(f"Error: 指定された字幕ファイルが見つかりません: {args.subs_override}")
 
     style_over = load_style_file(args.style_file) if args.style_file else {}
 
     with tempfile.TemporaryDirectory(prefix="burn_subs_") as work_dir:
-        print(f"Extracting {args.keyframes} -> {work_dir}")
-        with zipfile.ZipFile(args.keyframes) as z:
-            safe_extract(z, work_dir)
-
-        inputs_txt = os.path.join(work_dir, "inputs.txt")
-        images_with_durations = read_images_with_durations(inputs_txt)
+        images_with_durations = extract_keyframes(args.keyframes, work_dir)
         print(f"Images: {[f for f, _ in images_with_durations]}")
 
         first_img_path = os.path.join(work_dir, images_with_durations[0][0])
         with Image.open(first_img_path) as probe:
-            img_w, img_h = probe.size
-        print(f"Image size: {img_w}x{img_h}")
+            img_size = probe.size
+        print(f"Image size: {img_size[0]}x{img_size[1]}")
 
-        subtitle_file = args.subs_override or os.path.join(work_dir, "subtitles.ass")
+        subtitle_file = resolve_subtitles(work_dir, args.subs_override, args.keyframes)
         subs_raw = pysubs2.load(subtitle_file)
+        cfg = build_render_config(subs_raw, img_size, style_over, subs_source=subtitle_file)
 
-        play_res_y = int(subs_raw.info.get("PlayResY", "1080"))
-        scale = img_h / play_res_y
-
-        style = subs_raw.styles.get("Karaoke") or list(subs_raw.styles.values())[0]
-        font_size = int(style.fontsize * scale)
-        margin_v = int(style.marginv * scale)
-        outline = max(1, int(style.outline * scale))
-        primary = color_to_rgb(style.primarycolor)
-        secondary = color_to_rgb(style.secondarycolor)
-        outline_color = color_to_rgb(style.outlinecolor)
-
-        # --- スタイル JSON による上書き（px 値は PlayResY 基準で指定し実解像度へスケール）---
-        mode = style_over.get("mode", "karaoke")
-        position = style_over.get("position", "bottom")
-        if "font_size" in style_over:
-            font_size = int(float(style_over["font_size"]) * scale)
-        if "margin_v" in style_over:
-            margin_v = int(float(style_over["margin_v"]) * scale)
-        if "outline" in style_over:
-            outline = max(0, int(float(style_over["outline"]) * scale))
-        letter_spacing = int(float(style_over.get("letter_spacing", 0)) * scale)
-        if "primary_color" in style_over:
-            primary = hex_to_rgb(style_over["primary_color"])
-        if "secondary_color" in style_over:
-            secondary = hex_to_rgb(style_over["secondary_color"])
-        if "outline_color" in style_over:
-            outline_color = hex_to_rgb(style_over["outline_color"])
-        box = None
-        box_over = style_over.get("box")
-        if isinstance(box_over, dict):
-            box_color = box_over.get("color", "#000000")
-            if not (isinstance(box_color, str) and HEX_COLOR_RE.fullmatch(box_color)):
-                box_color = "#000000"
-            alpha = min(1.0, max(0.0, float(box_over.get("alpha", 0.4))))
-            pad = int(float(box_over.get("pad", 16)) * scale)
-            box = ((*hex_to_rgb(box_color), int(alpha * 255)), pad)
-
-        print(f"Mode: {mode}, Font size: {font_size}, MarginV: {margin_v}, Outline: {outline}")
-        print(f"Primary: {primary}, Secondary: {secondary}")
-
-        if "font" in style_over:
-            font = ImageFont.truetype(style_over["font"], font_size)
-            print(f"Font: {style_over['font']}")
-        else:
-            font = load_font(font_size)
-        cfg = RenderConfig(
-            font=font,
-            img_size=(img_w, img_h),
-            margin_v=margin_v,
-            outline=outline,
-            primary=primary,
-            secondary=secondary,
-            outline_color=outline_color,
-            mode=mode,
-            position=position,
-            letter_spacing=letter_spacing,
-            box=box,
-        )
         timeline, total_dur = build_timeline(work_dir, images_with_durations)
         events = [(e.start / 1000.0, e.end / 1000.0, e.text) for e in subs_raw]
         transitions = collect_transition_times(
-            events, total_dur, include_char_transitions=(mode == "karaoke"),
+            events, total_dur, include_char_transitions=(cfg.mode == "karaoke"),
         )
         print(f"Total transition segments: {len(transitions) - 1}")
 
