@@ -22,13 +22,10 @@ from PIL import Image
 import pysubs2
 
 from burn_subs import (
-    RenderConfig,
-    color_to_rgb,
-    hex_to_rgb,
-    load_font,
+    build_render_config,
     load_style_file,
     render_line_frame,
-    HEX_COLOR_RE,
+    require_ffmpeg,
 )
 
 
@@ -75,6 +72,7 @@ def main():
     parser.add_argument("--style-file", help="描画スタイルの JSON（styles/ にプリセットあり）")
     args = parser.parse_args()
 
+    require_ffmpeg("ffmpeg", "ffprobe")
     for path in (args.video, args.subtitles):
         if not os.path.exists(path):
             sys.exit(f"Error: ファイルが見つかりません: {path}")
@@ -85,56 +83,10 @@ def main():
 
     subs = pysubs2.load(args.subtitles)
     img_w, img_h = probe_size(args.video)
-    play_res_y = int(subs.info.get("PlayResY", "1080"))
-    scale = img_h / play_res_y
-    print(f"Video size: {img_w}x{img_h} (scale {scale:.2f})")
+    print(f"Video size: {img_w}x{img_h}")
 
-    ass_style = subs.styles.get("Karaoke") or list(subs.styles.values())[0]
-    font_size = int(ass_style.fontsize * scale)
-    margin_v = int(ass_style.marginv * scale)
-    outline = max(1, int(ass_style.outline * scale))
-    primary = color_to_rgb(ass_style.primarycolor)
-    outline_color = color_to_rgb(ass_style.outlinecolor)
-
-    if "font_size" in style_over:
-        font_size = int(float(style_over["font_size"]) * scale)
-    if "margin_v" in style_over:
-        margin_v = int(float(style_over["margin_v"]) * scale)
-    if "outline" in style_over:
-        outline = max(0, int(float(style_over["outline"]) * scale))
-    if "primary_color" in style_over:
-        primary = hex_to_rgb(style_over["primary_color"])
-    if "outline_color" in style_over:
-        outline_color = hex_to_rgb(style_over["outline_color"])
-    box = None
-    box_over = style_over.get("box")
-    if isinstance(box_over, dict):
-        box_color = box_over.get("color", "#000000")
-        if not (isinstance(box_color, str) and HEX_COLOR_RE.fullmatch(box_color)):
-            box_color = "#000000"
-        alpha = min(1.0, max(0.0, float(box_over.get("alpha", 0.4))))
-        pad = int(float(box_over.get("pad", 16)) * scale)
-        box = ((*hex_to_rgb(box_color), int(alpha * 255)), pad)
-
-    from PIL import ImageFont
-    if "font" in style_over:
-        font = ImageFont.truetype(style_over["font"], font_size)
-        print(f"Font: {style_over['font']}")
-    else:
-        font = load_font(font_size)
-
-    cfg = RenderConfig(
-        font=font,
-        img_size=(img_w, img_h),
-        margin_v=margin_v,
-        outline=outline,
-        primary=primary,
-        secondary=primary,
-        outline_color=outline_color,
-        mode="line",
-        position=style_over.get("position", "bottom"),
-        letter_spacing=int(float(style_over.get("letter_spacing", 0)) * scale),
-        box=box,
+    cfg = build_render_config(
+        subs, (img_w, img_h), style_over, force_mode="line", subs_source=args.subtitles
     )
 
     windows = build_windows(subs)

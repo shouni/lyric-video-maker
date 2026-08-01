@@ -8,6 +8,7 @@ Usage:
 またはプレーンテキスト（1行=1字幕行、空行は無視）を受け付ける。
 """
 
+import os
 import re
 import sys
 import zipfile
@@ -16,8 +17,13 @@ import stable_whisper
 import pysubs2
 
 PUNCT_PATTERN = re.compile(r'[　 、。！？!?,.\s\-\[\]\(\)「」『』〜♪…※☆★●○◎]')
+TAG_PATTERN = re.compile(r'\{[^}]*\}')
+LINE_BREAK_PATTERN = re.compile(r'\\[nNh]')
 TAIL_MS = 300  # 最終文字後の表示延長
 FILL_GAP_MARGIN_MS = 100  # 繰り返し歌唱時に次行との間に残す余白
+# 1行目のみ、元ASSの開始がWhisper判定よりこの範囲だけ早い場合は元ASSを採用（歌い出し対応）
+LEAD_IN_TOLERANCE_MS = 3000
+DEFAULT_K_CS = 10  # タイミングが尽きた文字に割り当てる既定の表示長
 
 
 def words_to_chars(segments):
@@ -87,6 +93,130 @@ def subs_from_txt(path):
     return subs
 
 
+def plain_text(text):
+    """ASSイベントのテキストから装飾タグと改行タグを取り除く。"""
+    return LINE_BREAK_PATTERN.sub('', TAG_PATTERN.sub('', text)).strip()
+
+
+def load_source_subs(path):
+    """歌詞入力（keyframes.zip / ASS / プレーンテキスト）を読み込んで SSAFile を返す。"""
+    if not os.path.exists(path):
+        raise SystemExit(f"Error: 歌詞入力が見つかりません: {path}")
+    if path.endswith(".txt"):
+        return subs_from_txt(path)
+    if path.endswith(".zip"):
+        with zipfile.ZipFile(path) as zf:
+            names = zf.namelist()
+            if "subtitles.ass" not in names:
+                raise SystemExit(
+                    f"Error: keyframes.zip に subtitles.ass が含まれていません。 ZIP内のファイル: {names}"
+                )
+            with zf.open("subtitles.ass") as f:
+                return pysubs2.SSAFile.from_string(f.read().decode("utf-8"))
+    return pysubs2.load(path)
+
+
+def extract_lyric_lines(subs):
+    """テキストを持つイベントの歌詞行だけを順番に取り出す。"""
+    return [plain for plain in (plain_text(e.text) for e in subs) if plain]
+
+
+def map_chars_to_lines(lyric_lines, whisper_chars):
+    """歌詞の各行に、Whisperが検出した文字タイミングを割り当てる。
+
+    句読点・記号（PUNCT_PATTERN）を除いた文字数が一致しない場合は、行全体の
+    タイミングがずれるため ValueError を送出して中断する（歌詞と歌唱のズレ検出）。
+    """
+    flat_orig = [
+        {"line": line_idx, "char": ch}
+        for line_idx, line in enumerate(lyric_lines)
+        for ch in line
+        if not PUNCT_PATTERN.match(ch)
+    ]
+    flat_whisper = [c for c in whisper_chars if PUNCT_PATTERN.match(c["char"]) is None]
+
+    if len(flat_orig) != len(flat_whisper):
+        raise ValueError(
+            f"文字数が一致しません (orig={len(flat_orig)}, whisper={len(flat_whisper)})。"
+            "タイミングが全体的にずれるためアライメントを中断します。"
+        )
+
+    line_char_map = {}
+    for orig, timing in zip(flat_orig, flat_whisper):
+        line_char_map.setdefault(orig["line"], []).append(timing)
+    return line_char_map
+
+
+def build_karaoke_text(plain, char_timings):
+    """歌詞1行と文字タイミングから \\k タグ付きのASSテキストを組み立てる。
+
+    句読点は直前の文字の \\k に吸収させる（句読点自体には歌唱時間が無いため）。
+    """
+    k_parts = []
+    ti = 0
+    for ch in plain:
+        if PUNCT_PATTERN.match(ch):
+            if k_parts:
+                k_parts[-1]["text"] += ch
+            else:
+                k_parts.append({"k_cs": 0, "text": ch})
+        elif ti < len(char_timings):
+            t = char_timings[ti]
+            k_parts.append({"k_cs": max(1, round((t["end"] - t["start"]) * 100)), "text": ch})
+            ti += 1
+        else:
+            k_parts.append({"k_cs": DEFAULT_K_CS, "text": ch})
+    return "".join(f"{{\\k{p['k_cs']}}}{p['text']}" for p in k_parts)
+
+
+def fill_repeat_gaps(subs):
+    """行間のギャップを次行の開始直前まで詰める（繰り返し歌唱中も歌詞を出し続ける）。"""
+    text_events = [e for e in subs if plain_text(e.text)]
+    for curr, next_ev in zip(text_events, text_events[1:]):
+        if next_ev.start - curr.end > FILL_GAP_MARGIN_MS:
+            curr.end = next_ev.start - FILL_GAP_MARGIN_MS
+
+
+def build_aligned_subs(subs_orig, line_char_map, verbose=True):
+    """元のASSと行ごとの文字タイミングから、\\kタグ付きの新しいASSを生成する。"""
+    new_subs = pysubs2.SSAFile()
+    new_subs.info = subs_orig.info.copy()
+    new_subs.styles = subs_orig.styles.copy()
+
+    valid_line_idx = 0
+    for event in subs_orig:
+        plain = plain_text(event.text)
+        if not plain:
+            # テキストを持たないイベント（空行やタグのみ）はそのまま保持
+            new_subs.append(event.copy())
+            continue
+
+        char_timings = line_char_map.get(valid_line_idx)
+        valid_line_idx += 1
+        if not char_timings:
+            new_subs.append(event.copy())
+            continue
+
+        line_start_s = char_timings[0]["start"]
+        line_end_s = char_timings[-1]["end"] + TAIL_MS / 1000
+
+        new_event = event.copy()
+        # 最初の行は歌い出し対応のため、元のASSがWhisperより少し早い場合のみ元のASSを採用
+        if valid_line_idx == 1 and 0 < ms(line_start_s) - event.start <= LEAD_IN_TOLERANCE_MS:
+            new_event.start = event.start
+        else:
+            new_event.start = ms(line_start_s)
+        new_event.end = ms(line_end_s)
+        new_event.text = build_karaoke_text(plain, char_timings)
+        new_subs.append(new_event)
+
+        if verbose:
+            print(f"  行{valid_line_idx}: {line_start_s:.2f}s - {line_end_s:.2f}s | {plain}")
+
+    fill_repeat_gaps(new_subs)
+    return new_subs
+
+
 def main():
     """Align existing subtitle text to audio and write a new karaoke-timed ASS file."""
     parser = argparse.ArgumentParser(description="音声からカラオケタイミングを取得し、ASS字幕を再生成する。")
@@ -100,144 +230,38 @@ def main():
     audio = args.audio
     ass_out = args.subtitles_out
 
-    # --- 元のASS読み込み（ZIP・ASS・プレーンテキスト歌詞を受け付ける）---
-    if args.subtitles_in.endswith(".txt"):
-        subs_orig = subs_from_txt(args.subtitles_in)
-    elif args.subtitles_in.endswith(".zip"):
-        with zipfile.ZipFile(args.subtitles_in) as zf:
-            names = zf.namelist()
-            if "subtitles.ass" not in names:
-                raise SystemExit(
-                    f"Error: keyframes.zip に subtitles.ass が含まれていません。"
-                    f" ZIP内のファイル: {names}"
-                )
-            with zf.open("subtitles.ass") as f:
-                subs_orig = pysubs2.SSAFile.from_string(f.read().decode("utf-8"))
-    else:
-        subs_orig = pysubs2.load(args.subtitles_in)
-    orig_events = []
-    for event in subs_orig:
-        plain = re.sub(r'\{[^}]*\}', '', event.text)
-        plain = re.sub(r'\\[nNh]', '', plain).strip()
-        if plain:
-            orig_events.append(plain)
+    if not os.path.exists(audio):
+        raise SystemExit(f"Error: 音声ファイルが見つかりません: {audio}")
 
-    text_to_align = "\n".join(orig_events)
+    # --- 元のASS読み込み（ZIP・ASS・プレーンテキスト歌詞を受け付ける）---
+    subs_orig = load_source_subs(args.subtitles_in)
+    lyric_lines = extract_lyric_lines(subs_orig)
+    if not lyric_lines:
+        raise SystemExit(f"Error: 歌詞行が1行もありません: {args.subtitles_in}")
 
     # --- アライメント実行 ---
     print("Whisperモデル読み込み中...")
     model = stable_whisper.load_model(args.model)
 
     print("アライメント実行中...")
-    result = model.align(audio, text_to_align, language=args.language)
+    result = model.align(audio, "\n".join(lyric_lines), language=args.language)
 
     # adjust_by_silence は音楽トラックでは逆効果になるため一旦無効化
     # result = result.adjust_by_silence(audio, vad=True)
 
-    # --- 文字レベルのタイムスタンプを収集 ---
-    # 複数文字トークンは時間を等分配
+    # --- 文字レベルのタイムスタンプを収集（複数文字トークンは時間を等分配）---
     all_chars = words_to_chars(result.segments)
     print(f"取得文字数: {len(all_chars)}")
 
-    # --- 元の字幕行の文字と照合 ---
-    # 句読点・スペース・記号を除いてマッチング
-    flat_orig = []
-    for line_idx, line in enumerate(orig_events):
-        for ch in line:
-            if PUNCT_PATTERN.match(ch):
-                continue
-            flat_orig.append({"line": line_idx, "char": ch})
-
-    flat_whisper = [c for c in all_chars if PUNCT_PATTERN.match(c["char"]) is None]
-
-    if len(flat_orig) != len(flat_whisper):
-        print(f"Error: 文字数が一致しません (orig={len(flat_orig)}, whisper={len(flat_whisper)})。タイミングが全体的にずれるためアライメントを中断します。", file=sys.stderr)
+    # --- 元の字幕行の文字と照合（句読点・スペース・記号は除いてマッチング）---
+    try:
+        line_char_map = map_chars_to_lines(lyric_lines, all_chars)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
+    print(f"照合文字数: {sum(len(v) for v in line_char_map.values())}")
 
-    n = len(flat_orig)
-    print(f"照合文字数: {n}")
-
-    # 各行の開始・終了インデックスを記録
-    line_char_map = {}  # line_idx -> [char_timing, ...]
-    for i in range(n):
-        li = flat_orig[i]["line"]
-        if li not in line_char_map:
-            line_char_map[li] = []
-        line_char_map[li].append(flat_whisper[i])
-
-    # --- 新しいASSイベントを生成 ---
-    new_subs = pysubs2.SSAFile()
-    new_subs.info = subs_orig.info.copy()
-    new_subs.styles = subs_orig.styles.copy()
-
-    valid_line_idx = 0
-    for event in subs_orig:
-        plain = re.sub(r'\{[^}]*\}', '', event.text)
-        plain = re.sub(r'\\[nNh]', '', plain).strip()
-
-        if not plain:
-            # テキストを持たないイベント（空行やタグのみ）はそのまま保持
-            new_subs.append(event.copy())
-            continue
-
-        char_timings = line_char_map.get(valid_line_idx)
-        valid_line_idx += 1
-
-        if not char_timings:
-            new_subs.append(event.copy())
-            continue
-
-        line_start_s = char_timings[0]["start"]
-        line_end_s   = char_timings[-1]["end"] + TAIL_MS / 1000
-
-        # 元の行の文字（句読点含む）に \k を割り当て
-        # 句読点はその前の文字の \k に吸収させる
-        timing_queue = list(char_timings)
-        k_parts = []
-        ti = 0
-
-        for ch in plain:
-            is_punct = bool(PUNCT_PATTERN.match(ch))
-            if is_punct:
-                # 句読点は直前の \k に時間を加算（または 0cs でスキップ）
-                if k_parts:
-                    k_parts[-1]["text"] += ch
-                else:
-                    k_parts.append({"k_cs": 0, "text": ch})
-            else:
-                if ti < len(timing_queue):
-                    t = timing_queue[ti]
-                    duration_s = t["end"] - t["start"]
-                    k_cs = max(1, round(duration_s * 100))
-                    k_parts.append({"k_cs": k_cs, "text": ch})
-                    ti += 1
-                else:
-                    k_parts.append({"k_cs": 10, "text": ch})
-
-        # \k タグ付きテキスト生成
-        ass_text = "".join(f"{{\\k{p['k_cs']}}}{p['text']}" for p in k_parts)
-
-        new_event = event.copy()
-        # 最初の行は歌い出し対応のため、元のASSがWhisperより少し早い場合のみ元のASSを採用
-        if valid_line_idx == 1 and 0 < ms(line_start_s) - event.start <= 3000:
-            new_event.start = event.start
-        else:
-            new_event.start = ms(line_start_s)
-        new_event.end   = ms(line_end_s)
-        new_event.text  = ass_text
-        new_subs.append(new_event)
-
-        print(f"  行{valid_line_idx}: {line_start_s:.2f}s - {line_end_s:.2f}s | {plain}")
-
-    # --- 繰り返し歌唱対応: ギャップを次行開始直前まで延長 ---
-    text_events = [e for e in new_subs if re.sub(r'\{[^}]*\}', '', e.text).strip()]
-    for i in range(len(text_events) - 1):
-        curr = text_events[i]
-        next_ev = text_events[i + 1]
-        gap_ms = next_ev.start - curr.end
-        if gap_ms > FILL_GAP_MARGIN_MS:
-            curr.end = next_ev.start - FILL_GAP_MARGIN_MS
-
+    new_subs = build_aligned_subs(subs_orig, line_char_map)
     new_subs.save(ass_out)
     print(f"\n完了: {ass_out}")
 
