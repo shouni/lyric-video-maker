@@ -64,11 +64,13 @@
   "outline_color": "#CC0000",
   "outline": 6,
   "box": {"color": "#000000", "alpha": 0.35, "pad": 22},
-  "font": "/path/to/font.ttf"
+  "font": "/path/to/font.ttf",
+  "font_index": 0
 }
 ```
 
-（`box` / `font` は任意。`mode` 省略時は従来どおりカラオケ描画で、色やサイズの上書きのみ適用されます）
+（`box` / `font` / `font_index` は任意。`mode` 省略時は従来どおりカラオケ描画で、色やサイズの上書きのみ適用されます）
+- `font_index` は `.ttc`（1ファイルに複数ウェイトが入った形式）でウェイトを選ぶための番号です（例: ヒラギノ明朝 ProN は 0=W3 / 2=W6）。`font` を指定したときだけ効きます。
 - **フォント**: macOS 標準の**ヒラギノ角ゴシック W7**を最優先で使用します。見つからない場合は**源ノ角ゴシック**（Source Han Sans VF）にフォールバックします（SIL Open Font License、YouTube 商用利用可）。Source Han Sans VF のインストールは `brew install --cask font-source-han-sans-vf`。
 
 ### 🖼️ カバー画像の自動生成（make_cover.py）

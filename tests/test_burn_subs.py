@@ -144,6 +144,15 @@ class TestLoadStyleFile:
         style = bs.load_style_file(self._write(tmp_path, {"font": "/no/such/font.ttf"}))
         assert "font" not in style
 
+    def test_keeps_valid_font_index(self, tmp_path):
+        style = bs.load_style_file(self._write(tmp_path, {"font_index": 2}))
+        assert style == {"font_index": 2}
+
+    def test_drops_malformed_font_index(self, tmp_path, capsys):
+        style = bs.load_style_file(self._write(tmp_path, {"font_index": -1}))
+        assert "font_index" not in style
+        assert "Warning" in capsys.readouterr().err
+
     def test_rejects_non_object_json(self, tmp_path):
         with pytest.raises(SystemExit):
             bs.load_style_file(self._write(tmp_path, ["not", "a", "dict"]))

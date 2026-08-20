@@ -507,6 +507,10 @@ def load_style_file(path):
     if font is not None and not os.path.exists(font):
         print(f"Warning: スタイル指定のフォントが見つかりません: {font} → 既定の探索順を使用", file=sys.stderr)
         style.pop("font")
+    index = style.get("font_index")
+    if index is not None and not (isinstance(index, int) and not isinstance(index, bool) and index >= 0):
+        print(f"Warning: font_index は 0 以上の整数で指定してください（{index!r}）→ 0 を使用", file=sys.stderr)
+        style.pop("font_index")
     return style
 
 
@@ -571,8 +575,11 @@ def build_render_config(subs, img_size, style_over, force_mode=None, subs_source
     print(f"Primary: {primary}, Secondary: {secondary}")
 
     if "font" in style_over:
-        font = ImageFont.truetype(style_over["font"], font_size)
-        print(f"Font: {style_over['font']}")
+        # ttc は 1 ファイルに複数ウェイトが入っている（例: ヒラギノ明朝 ProN は 0=W3 / 2=W6）。
+        # 既定の 0 以外を使いたいときだけ font_index で選ぶ。
+        font_index = int(style_over.get("font_index", 0))
+        font = ImageFont.truetype(style_over["font"], font_size, index=font_index)
+        print(f"Font: {style_over['font']} (index {font_index})")
     else:
         font = load_font(font_size)
 
