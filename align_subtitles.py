@@ -177,6 +177,20 @@ def fill_repeat_gaps(subs):
             curr.end = next_ev.start - FILL_GAP_MARGIN_MS
 
 
+def trim_overlaps(subs):
+    """次行と重なった行末を、次行の開始で切る。
+
+    行末には TAIL_MS の余韻を足すため、次行がすぐ始まると重なる。burn_subs.py は
+    「先の行優先」で1行しか描かないので影響しないが、libass にこのASSをそのまま
+    渡すと重なった区間で2行が積まれて表示されるため、ASSの側で解消しておく。
+    """
+    text_events = [e for e in subs if plain_text(e.text)]
+    for curr, next_ev in zip(text_events, text_events[1:]):
+        # 開始まで追い越しているときは、切ると表示長が0以下になるので触らない
+        if curr.start < next_ev.start < curr.end:
+            curr.end = next_ev.start
+
+
 def build_aligned_subs(subs_orig, line_char_map, verbose=True):
     """元のASSと行ごとの文字タイミングから、\\kタグ付きの新しいASSを生成する。"""
     new_subs = pysubs2.SSAFile()
@@ -194,6 +208,13 @@ def build_aligned_subs(subs_orig, line_char_map, verbose=True):
         char_timings = line_char_map.get(valid_line_idx)
         valid_line_idx += 1
         if not char_timings:
+            # 句読点のみの行は照合対象の文字を持たないためタイミングが割り当たらない。
+            # 元ASSの時刻（txt入力なら仮の時刻）がそのまま残り、無関係な時刻の行になる。
+            print(
+                f"Warning: 行{valid_line_idx} にタイミングを割り当てられません"
+                f"（句読点のみ？）: {plain} → 元ASSの時刻のまま出力します",
+                file=sys.stderr,
+            )
             new_subs.append(event.copy())
             continue
 
@@ -214,6 +235,7 @@ def build_aligned_subs(subs_orig, line_char_map, verbose=True):
             print(f"  行{valid_line_idx}: {line_start_s:.2f}s - {line_end_s:.2f}s | {plain}")
 
     fill_repeat_gaps(new_subs)
+    trim_overlaps(new_subs)
     return new_subs
 
 

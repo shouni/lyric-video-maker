@@ -41,11 +41,12 @@ AP MV エコシステム（keyframes.zip を生成する側）のローカル後
 
 stable-ts の `model.align()` で**既存の歌詞テキストを音声のタイミングに割り当てる**。ゼロからの transcribe パスは無い。
 
-Whisper 呼び出し以外は純粋関数に分割してある（`load_source_subs` → `extract_lyric_lines` → `map_chars_to_lines` → `build_karaoke_text` → `build_aligned_subs` → `fill_repeat_gaps`）。ロジックを変えるときは `tests/test_align_subtitles.py` を先に更新すること。
+Whisper 呼び出し以外は純粋関数に分割してある（`load_source_subs` → `extract_lyric_lines` → `map_chars_to_lines` → `build_karaoke_text` → `build_aligned_subs` → `fill_repeat_gaps` → `trim_overlaps`）。ロジックを変えるときは `tests/test_align_subtitles.py` を先に更新すること。
 
 - 歌詞入力は3形式: keyframes.zip 内の `subtitles.ass` / 単体 ASS / プレーンテキスト。`.txt` の場合は `subs_from_txt()` が既定の Karaoke スタイル（Arial 64px・黄ハイライト・PlayRes 1920x1080、既存 subtitles.ass と同一値）で ASS を合成してから同じフローに乗せる。行の区切りがそのまま字幕の行割りになる。
 - **文字数照合が厳密**: 句読点・記号（`PUNCT_PATTERN`）を除いた歌詞の文字数と Whisper の検出文字数が一致しないと中断する。歌詞と歌唱のズレ（アドリブ・繰り返し省略）で失敗する設計。
-- 句読点は直前の文字の `\k` に時間ごと吸収させる。1行目のみ、元 ASS の開始が Whisper 判定より 0〜3 秒早い場合は元 ASS の開始時刻を採用（歌い出し対応）。行間ギャップは次行開始直前まで延長（繰り返し歌唱対応）。
+- 句読点は直前の文字の `\k` に時間ごと吸収させる。1行目のみ、元 ASS の開始が Whisper 判定より 0〜3 秒早い場合は元 ASS の開始時刻を採用（歌い出し対応）。行間ギャップは次行開始直前まで延長（繰り返し歌唱対応）、逆に `TAIL_MS` の余韻で次行と重なった行末は次行の開始で切る（`trim_overlaps`）。burn_subs.py は「先の行優先」で1行しか描かないので重なっても見えないが、この ASS を libass に直接渡す使い方（姉妹プロジェクトのナレーション動画テンプレ `~/test/re6x`）では2行が積まれて表示されるため。
+- 句読点だけの行は照合対象の文字を持たないためタイミングが割り当たらず、元 ASS の時刻（txt 入力なら仮の時刻）のまま残る。中断はせず警告を出すので、呼び出し側で句読点のみの行を作らないこと。
 
 ### burn_subs.py — 差分描画によるカラオケ焼き込み
 
