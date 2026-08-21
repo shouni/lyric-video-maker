@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Burn ASS karaoke subtitles onto PNG images and create MP4.
+"""キーフレーム画像に ASS カラオケ字幕を焼き込み、MP4 を生成する。
 
 Usage:
     python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4] [--subs <subtitles.ass>] [--style-file <style.json>]
@@ -69,7 +69,7 @@ FONT_CANDIDATES = [
 
 
 def safe_extract(zip_file, target_dir):
-    """Extract zip contents, rejecting any path that escapes target_dir."""
+    """ZIP を展開する。target_dir の外へ出るパスは展開せず中断する。"""
     abs_target = os.path.abspath(target_dir) + os.sep
     for member in zip_file.infolist():
         dest = os.path.abspath(os.path.join(abs_target, member.filename))
@@ -79,12 +79,12 @@ def safe_extract(zip_file, target_dir):
 
 
 def color_to_rgb(c):
-    """Convert a pysubs2 ASS color object to a PIL-compatible RGB tuple."""
+    """pysubs2 の ASS カラーを PIL 用の RGB タプルへ変換する。"""
     return (c.r, c.g, c.b)
 
 
 def parse_karaoke(raw_text):
-    """Parse ASS karaoke \\k tags into centisecond text segments."""
+    """ASS の \\k タグを (開始cs, 終了cs, テキスト) のセグメント列へ分解する。"""
     segments = []
     cs = 0
     for m in re.finditer(r'\{\\k(\d+)\}([^{]*)', raw_text):
@@ -96,7 +96,7 @@ def parse_karaoke(raw_text):
 
 
 def read_images_with_durations(inputs_txt):
-    """Read ffmpeg concat file entries as image filename and duration pairs."""
+    """ffmpeg concat 形式の inputs.txt を (画像ファイル名, 表示秒数) の並びとして読む。"""
     images_with_durations = []
     current_file = None
     with open(inputs_txt, encoding="utf-8") as f:
@@ -111,7 +111,7 @@ def read_images_with_durations(inputs_txt):
 
 
 def build_timeline(work_dir, images_with_durations):
-    """Build absolute image time ranges from concat image durations."""
+    """表示秒数の並びから、各画像の絶対時刻の区間と全体の尺を求める。"""
     timeline = []
     t = 0.0
     for img, dur in images_with_durations:
@@ -121,7 +121,7 @@ def build_timeline(work_dir, images_with_durations):
 
 
 def img_at(timeline, t_sec):
-    """Return the image path active at the given time in seconds."""
+    """指定時刻（秒）に表示されている画像のパスを返す。"""
     for start, end, img in timeline:
         if start <= t_sec < end:
             return img
@@ -129,7 +129,7 @@ def img_at(timeline, t_sec):
 
 
 def event_at(events, t_sec):
-    """Return the subtitle event active at the given time in seconds."""
+    """指定時刻（秒）に表示されている字幕イベントを返す。重なる場合は先の行が優先。"""
     for start, end, text in events:
         if start <= t_sec < end:
             return (start, end, text)
@@ -137,7 +137,7 @@ def event_at(events, t_sec):
 
 
 def load_font(font_size):
-    """Load a CJK-capable font for rendering Japanese karaoke text."""
+    """日本語を描画できるフォントを FONT_CANDIDATES の順に探して読み込む。"""
     for path in FONT_CANDIDATES:
         if os.path.exists(path):
             try:
@@ -152,7 +152,7 @@ def load_font(font_size):
 
 
 def get_base_img(path, img_cache):
-    """Return a copy of a cached RGB source image."""
+    """背景画像をキャッシュから複製して返す（同じ画像を何度も読み直さない）。"""
     if path not in img_cache:
         img_cache[path] = Image.open(path).convert("RGB")
     return img_cache[path].copy()
@@ -348,7 +348,11 @@ def render_line_frame(img, text, cfg):
 
 
 def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
-    """Render the active karaoke line onto one image frame."""
+    """1フレーム分の背景画像に、その時刻の字幕を描画する。
+
+    karaoke モードは \\k セグメント単位でハイライト色を塗り分け、line モードは
+    行全体を render_line_frame に委ねる。
+    """
     img = get_base_img(img_path, img_cache)
     if evt is None:
         return img
@@ -397,7 +401,7 @@ def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
 
 
 def collect_transition_times(events, total_dur, include_char_transitions=True):
-    """Collect every time where the rendered subtitle state can change.
+    """描画結果が変化しうる時刻をすべて集める。
 
     line モードでは文字単位のハイライトが無いため、行の開始/終了のみ集める。
     """
@@ -421,7 +425,11 @@ def build_concat_lines(
     frames_dir,
     img_cache=None,
 ):
-    """Render unique subtitle states and return ffmpeg concat file lines."""
+    """状態が変わる区間ごとにフレームを描画し、ffmpeg concat 用の行を返す。
+
+    状態キー（背景画像, 字幕イベント, ハイライト済み文字数）が同じ区間は
+    描画済みのフレームを使い回す。
+    """
     if img_cache is None:
         img_cache = {}
     concat_lines = []
@@ -468,7 +476,7 @@ def build_concat_lines(
 
 
 def run_ffmpeg(concat_txt, audio, output):
-    """Encode rendered frames and audio into the final MP4."""
+    """描画済みフレームと音声を MP4 にエンコードする。"""
     print("\nRunning ffmpeg...")
     return subprocess.run(
         [
@@ -640,12 +648,12 @@ def resolve_subtitles(work_dir, subs_override, keyframes):
 
 
 def main():
-    """Load inputs, render karaoke subtitle frames, and encode the output video."""
-    parser = argparse.ArgumentParser(description="Burn ASS karaoke subtitles onto PNG images and create MP4.")
-    parser.add_argument("audio", help="Input audio file (mp3)")
-    parser.add_argument("keyframes", help="Input keyframes zip file")
-    parser.add_argument("output", nargs="?", default="output.mp4", help="Output MP4 file")
-    parser.add_argument("--subs", dest="subs_override", help="Override subtitles file (ass)")
+    """入力を読み込み、字幕フレームを描画して MP4 を書き出す。"""
+    parser = argparse.ArgumentParser(description="キーフレーム画像に ASS カラオケ字幕を焼き込み、MP4 を生成する。")
+    parser.add_argument("audio", help="BGM として使う音声ファイル (mp3)")
+    parser.add_argument("keyframes", help="キーフレーム ZIP（PNG + inputs.txt + subtitles.ass）")
+    parser.add_argument("output", nargs="?", default="output.mp4", help="出力 MP4（既定: output.mp4）")
+    parser.add_argument("--subs", dest="subs_override", help="ZIP 内の字幕を上書きする ASS ファイル")
     parser.add_argument("--style-file", help="描画スタイルを上書きする JSON ファイル（styles/ にプリセットあり）")
     args = parser.parse_args()
 
