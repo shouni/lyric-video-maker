@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""MP4の最初のフレームからタイトル入りカバー画像を作成する。
+"""MP4のフレームからタイトル入りカバー画像を作成する（既定は先頭、--at で任意の時刻）。
 
 通常YouTube用 (16:9, 1280x720) とショート用 (9:16, 1080x1920) の2枚を出力する。
 ショート用は16:9フレームをぼかし背景の上に重ね、下部にタイトルを配置する。
 フォントは burn_subs.py と同じ探索ロジック（load_font）を利用する。
 
 Usage:
-    .venv/bin/python make_cover.py "/path/to/video_with_lyrics.mp4" --title "Packet Loss"
+    python3 make_cover.py "/path/to/video_with_lyrics.mp4" --title "Packet Loss" [--at 8]
 
 タイトル省略時はMP4の親フォルダ名を使う。出力は既定でMP4と同じフォルダ。
 """
@@ -105,6 +105,7 @@ def draw_title_block(img, title, artist, center_y=None):
 
 
 def center_crop_to_ratio(img, ratio_w, ratio_h):
+    """指定した縦横比になるよう、画像の中央を切り出す。"""
     w, h = img.size
     target = ratio_w / ratio_h
     if w / h > target:
@@ -144,7 +145,7 @@ def make_short_cover(frame, title, artist, size=(1080, 1920)):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MP4の最初のフレームからカバー画像を作成する")
+    parser = argparse.ArgumentParser(description="MP4のフレームからカバー画像を作成する")
     parser.add_argument("video", help="入力MP4のパス")
     parser.add_argument("--title", help="タイトル（省略時はMP4の親フォルダ名）")
     parser.add_argument("--artist", default=DEFAULT_ARTIST, help=f"アーティスト名（既定: {DEFAULT_ARTIST}）")
