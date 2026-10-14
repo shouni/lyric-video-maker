@@ -162,7 +162,11 @@ def build_karaoke_text(plain, char_timings):
                 k_parts.append({"k_cs": 0, "text": ch})
         elif ti < len(char_timings):
             t = char_timings[ti]
-            k_parts.append({"k_cs": max(1, round((t["end"] - t["start"]) * 100)), "text": ch})
+            # \k は連続して進むので、長さは次の文字の開始まで取り、文字間の間（読点・息継ぎ）を
+            # 直前の文字に含める。発声区間だけにすると間の分だけハイライトが音声より先走る。
+            # 開始時刻の側で丸め、行内で丸め誤差を溜めない。
+            nxt = char_timings[ti + 1]["start"] if ti + 1 < len(char_timings) else t["end"]
+            k_parts.append({"k_cs": max(1, round(nxt * 100) - round(t["start"] * 100)), "text": ch})
             ti += 1
         else:
             k_parts.append({"k_cs": DEFAULT_K_CS, "text": ch})

@@ -107,6 +107,16 @@ class TestBuildKaraokeText:
         text = al.build_karaoke_text("あい", chars(("あ", 0.0, 0.30), ("い", 0.30, 0.75)))
         assert text == r"{\k30}あ{\k45}い"
 
+    def test_gap_before_next_char_is_kept_in_previous_duration(self):
+        # 読点の間（0.2〜0.5s）を捨てると、い のハイライトが 0.3s 早まる
+        text = al.build_karaoke_text("あ、い", chars(("あ", 0.0, 0.2), ("い", 0.5, 0.7)))
+        assert text == r"{\k50}あ、{\k20}い"
+
+    def test_rounding_does_not_accumulate_within_line(self):
+        # 1.6cs ずつ個別に丸めると 2+2+2=6cs になり、行末の 4.8cs を越える
+        text = al.build_karaoke_text("あいう", chars(("あ", 0.0, 0.016), ("い", 0.016, 0.032), ("う", 0.032, 0.048)))
+        assert text == r"{\k2}あ{\k1}い{\k2}う"
+
     def test_punctuation_is_absorbed_by_previous_char(self):
         text = al.build_karaoke_text("あ、い", chars(("あ", 0.0, 0.2), ("い", 0.2, 0.4)))
         assert text == r"{\k20}あ、{\k20}い"
