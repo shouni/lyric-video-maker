@@ -1,0 +1,17 @@
+# テスト用の架空の曲（12 秒、120 BPM）。実際の曲の設定は songs/<slug>/ に置く（git 管理外）。
+title = "テスト曲"
+audio = "work/fixture/audio.wav"
+work_dir = "work/fixture"
+duration = 12.0
+
+lyrics_aligner = "suno"
+# 配色。styles/<name>.json を burn_subs.py の --style-file と共有する（既定 karaoke_blue）
+style = "karaoke_blue"
+drum_rule = "rock"
+
+sections = [[0.0, "INTRO"], [2.0, "VERSE"], [6.0, "CHORUS"], [10.0, "OUTRO"]]
+choruses = [[6.0, 10.0]]
+instrumental = [[0.0, 1.9], [10.2, 12.0]]
+
+[thumbnail]
+window = [6.0, 10.0]

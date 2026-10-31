@@ -107,3 +107,8 @@ frames_tmp*/
 *.zip
 *.ass
 
+# beatmv: 曲ごとの設定（songs/）と、音源・分離ステム・MV などの生成物（work/）はこのマシンにだけ置く
+/songs/
+/work/
+# テスト用の架空の曲の字幕（*.ass は上で無視しているので戻す）
+!/tests/fixtures/**/*.ass

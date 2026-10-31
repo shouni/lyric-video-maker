@@ -13,7 +13,6 @@ Usage:
 
 import argparse
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -24,6 +23,7 @@ import pysubs2
 from burn_subs import (
     build_render_config,
     load_style_file,
+    plain_text,
     render_line_frame,
     require_ffmpeg,
 )
@@ -47,8 +47,7 @@ def build_windows(subs):
     """
     events = []
     for e in subs:
-        plain = re.sub(r"\{[^}]*\}", "", e.text)
-        plain = re.sub(r"\\[nNh]", "", plain).strip()
+        plain = plain_text(e.text)
         if plain:
             events.append((e.start / 1000.0, e.end / 1000.0, plain))
     events.sort(key=lambda x: x[0])
