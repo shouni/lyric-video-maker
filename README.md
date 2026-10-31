@@ -7,7 +7,7 @@
 
 ## 🎯 概要
 
-**Lyric Video Maker** は、MP3 音声ファイルとキーフレーム ZIP ファイルから、**カラオケ字幕付き MP4 動画**を生成する Python スクリプト群です。完成済みの MV 動画へ字幕を乗せることもできます。
+**Lyric Video Maker** は、音声ファイル（mp3 / wav など）とキーフレーム ZIP ファイルから、**カラオケ字幕付き MP4 動画**を生成する Python スクリプト群です。完成済みの MV 動画へ字幕を乗せることもできます。
 
 ワークフローは 3 段階です（② は素材が静止画か動画かで2種類）。
 
@@ -32,33 +32,6 @@
 
 ---
 
-## 🥁 beatmv：画像素材なしで音から描く MV
-
-曲を解析して、キックで広がるリング・打楽器で開く縦線・打点のタイムライン・歌った分だけ塗られる歌詞を、Pillow で 1 コマずつ描きます。既定は 4K（3840x2160）。YouTube は 1440p 以上の投稿を高ビットレートで配信するので、1080p で見る人にも文字の輪郭が残りやすくなります。
-
-曲ごとの違いは `songs/<slug>/song.toml` に書き、コードは全曲で共有します。`songs/` と生成物の `work/` は手元のマシンにだけ置き、git では管理しません（曲の歌詞や音源を公開リポジトリに載せないため）。書き方の例は `tests/fixtures/song/` にあります。
-
-```
-songs/<slug>/
-  song.toml     曲名・音源・作業ディレクトリ・セクションの時刻・ドラムの振り分け方
-  beats.json    小節頭の時刻（Suno の audio-analysis から）
-  lyrics.ass    \k 付きの歌詞（Suno の時刻合わせ、または align_subtitles.py で作る）
-```
-
-```sh
-.venv/bin/python -m beatmv analyze  songs/midnight   # Demucs でドラム分離 → キック/打楽器の打点、波形用の音量
-.venv/bin/python -m beatmv render   songs/midnight   # MV（既定 4K。--scale 1 で 1080p、--preview 45,100 で静止画）
-.venv/bin/python -m beatmv srt      songs/midnight   # YouTube 字幕（SRT）
-.venv/bin/python -m beatmv thumb-bg songs/midnight   # サムネイルの背景（曲名は別途 ap-music の ApplyTitle で載せる）
-```
-
-- **時刻はレシピではなく音から取る。** Suno はセクションの秒数を守らず、頼んでいない間奏を足すことがあります。`sections` / `choruses` / `instrumental` には、Suno の時刻合わせと解析から取った実際の時刻を書きます。
-- **ドラムの振り分けは曲で選ぶ**（`drum_rule`）。`rock` は低域が主役の打点をキック、`edm` は四つ打ちのキックのアタックが中高域にも出るので低域が立てばキックとし、2 段目は打楽器全般（`PERC`）として表示します。
-- **配色は `styles/` を burn_subs と共有する**（`style`、既定 `karaoke_blue`）。beatmv が使うのは色だけで、`primary_color`（歌った部分）・`secondary_color`（まだの部分）・`outline_color`（縁取りと背景の下の色）に加え、beatmv だけの `accent_color`（リング・波形・タイムライン・曲名。省略時は `primary_color`）と `background_top`（背景の上の色）を読みます。`font_size` などの大きさは beatmv では使いません（文字の大きさは beatmv のレイアウトで決めるため）。
-- **歌詞の出どころで塗り始めの扱いが違う**（`lyrics_aligner`）。`whisper`（align_subtitles.py）は行の開始が前の行の終わりまで繰り上がるので、最初の文字が長いときは歌い出しの直前から塗ります。
-
----
-
 ## 💎 特徴と設計思想
 
 ### 🎤 Whisper による文字レベル自動アライメント（align_subtitles.py）
@@ -79,7 +52,7 @@ songs/<slug>/
 
 ### 🎬 スタイルファイルによる MV 風描画（--style-file）
 
-- `--style-file style.json` で描画スタイルを上書きできます。`styles/` にプリセット（`rock.json` / `minimal.json` / `ballad.json` / `karaoke_blue.json`）あり。`karaoke_blue` はこれまでの MV で使ってきた配色（水色 #8FE3FF・白・紺の縁取り）で、beatmv の既定の配色でもあります。
+- `--style-file style.json` で描画スタイルを上書きできます。`styles/` にプリセット（`rock.json` / `minimal.json` / `ballad.json` / `karaoke_blue.json`）あり。`karaoke_blue` はこれまでの MV で使ってきた配色（水色 #8FE3FF・白・紺の縁取り）です。
 - `"mode": "line"` にするとカラオケハイライトなしの **1行表示**になり、配置（`position`: top/center/bottom）・字間（`letter_spacing`）・背景座布団（`box`）が使えます。描画状態が行単位になるためカラオケより高速です。
 - 幅に収まらない行は**自動調整**します: まず1行のままフォント縮小を試み、縮小率が 70% を下回るほど長い行は**2行に折り返し**ます（英語はスペース位置、日本語は幅バランスの良い文字境界で分割）。カラオケモードも同じ方針で、こちらは `\k` セグメントを分割単位にします（セグメント内部では割りません）。
 - px 値（`font_size` / `margin_v` / `outline` / `letter_spacing` / `box.pad`）は **PlayResY（1080）基準**で指定し、実解像度へ自動スケールされます。色は `#RRGGBB`。不正値は警告して ASS の値にフォールバックします。
@@ -178,7 +151,7 @@ python3 make_cover.py output/output.mp4 --title "曲名"
 
 | 引数 | 必須 | 説明 |
 | --- | --- | --- |
-| `audio.mp3` | ✅ | アライメント対象の音声ファイル |
+| `audio.mp3` | ✅ | アライメント対象の音声ファイル（wav なども可。分離したボーカルを渡すと精度が上がる）|
 | `keyframes.zip` / `subtitles.ass` / `lyrics.txt` | ✅ | ZIP を渡すと内部の `subtitles.ass` を自動抽出。ASS ファイル直接、またはプレーンテキスト歌詞（1行=1字幕行）も可 |
 | `output.ass` | ➖ | 出力 ASS ファイル名（省略時: `subtitles_aligned.ass`）|
 | `--model` | ➖ | Whisper モデルサイズ（`base` / `small` / `medium` / `large-v3`、省略時: `large-v3`）|
@@ -190,7 +163,7 @@ python3 make_cover.py output/output.mp4 --title "曲名"
 
 | 引数 | 必須 | 説明 |
 | --- | --- | --- |
-| `audio.mp3` | ✅ | BGM として使用する音声ファイル |
+| `audio.mp3` | ✅ | BGM として使用する音声ファイル（wav なども可）|
 | `keyframes.zip` | ✅ | PNG 画像・`inputs.txt`・`subtitles.ass` を含む ZIP |
 | `output.mp4` | ➖ | 出力ファイル名（省略時: `output.mp4`）|
 | `--subs <subtitles.ass>` | ➖ | ZIP 内の字幕を上書きする ASS ファイル |
@@ -244,6 +217,33 @@ duration 50.000
 
 ---
 
+## 🥁 beatmv：画像素材なしで音から描く MV
+
+曲を解析して、キックで広がるリング・打楽器で開く縦線・打点のタイムライン・歌った分だけ塗られる歌詞を、Pillow で 1 コマずつ描きます。既定は 4K（3840x2160）。YouTube は 1440p 以上の投稿を高ビットレートで配信するので、1080p で見る人にも文字の輪郭が残りやすくなります。
+
+曲ごとの違いは `songs/<slug>/song.toml` に書き、コードは全曲で共有します。`songs/` と生成物の `work/` は手元のマシンにだけ置き、git では管理しません（曲の歌詞や音源を公開リポジトリに載せないため）。書き方の例は `tests/fixtures/song/` にあります。
+
+```
+songs/<slug>/
+  song.toml     曲名・音源・作業ディレクトリ・セクションの時刻・ドラムの振り分け方
+  beats.json    小節頭の時刻（Suno の audio-analysis から）
+  lyrics.ass    \k 付きの歌詞（Suno の時刻合わせ、または align_subtitles.py で作る）
+```
+
+```sh
+.venv/bin/python -m beatmv analyze  songs/midnight   # Demucs でドラム分離 → キック/打楽器の打点、波形用の音量
+.venv/bin/python -m beatmv render   songs/midnight   # MV（既定 4K。--scale 1 で 1080p、--preview 45,100 で静止画）
+.venv/bin/python -m beatmv srt      songs/midnight   # YouTube 字幕（SRT）
+.venv/bin/python -m beatmv thumb-bg songs/midnight   # サムネイルの背景（曲名は別途 ap-music の ApplyTitle で載せる）
+```
+
+- **時刻はレシピではなく音から取る。** Suno はセクションの秒数を守らず、頼んでいない間奏を足すことがあります。`sections` / `choruses` / `instrumental` には、Suno の時刻合わせと解析から取った実際の時刻を書きます。
+- **ドラムの振り分けは曲で選ぶ**（`drum_rule`）。`rock` は低域が主役の打点をキック、`edm` は四つ打ちのキックのアタックが中高域にも出るので低域が立てばキックとし、2 段目は打楽器全般（`PERC`）として表示します。
+- **配色は `styles/` を burn_subs と共有する**（`style`、既定 `karaoke_blue`）。beatmv が使うのは色だけで、`primary_color`（歌った部分）・`secondary_color`（まだの部分）・`outline_color`（縁取りと背景の下の色）に加え、beatmv だけの `accent_color`（リング・波形・タイムライン・曲名。省略時は `primary_color`）と `background_top`（背景の上の色）を読みます。`font_size` などの大きさは beatmv では使いません（文字の大きさは beatmv のレイアウトで決めるため）。
+- **歌詞の出どころで塗り始めの扱いが違う**（`lyrics_aligner`）。`whisper`（align_subtitles.py）は行の開始が前の行の終わりまで繰り上がるので、最初の文字が長いときは歌い出しの直前から塗ります。
+
+---
+
 ## 🤝 依存関係 (Dependencies)
 
 | パッケージ | 用途 |
@@ -264,7 +264,7 @@ pip install -r requirements-dev.txt
 python3 -m pytest tests -q
 ```
 
-ffmpeg や Whisper を呼ばない純粋ロジック（`\k` タグの解析、行の自動折り返し、スタイル JSON の検証、歌詞と音声の文字照合、表示区間の重なり解消など）を対象にしています。動画の出来そのものは `input/` のサンプルで実行して確認してください。
+ffmpeg や Whisper を呼ばない純粋ロジック（`\k` タグの解析、行の自動折り返し、スタイル JSON の検証、歌詞と音声の文字照合、表示区間の重なり解消、beatmv の曲設定・ドラムの振り分け・歌詞の時刻・配色など）を対象にしています。beatmv は `tests/fixtures/song/` の架空の曲で確かめます。動画の出来そのものは `input/` のサンプルで実行して確認してください。
 
 ---
 

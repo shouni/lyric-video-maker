@@ -246,7 +246,7 @@ def build_aligned_subs(subs_orig, line_char_map, verbose=True):
 def main():
     """歌詞テキストを音声にアライメントし、\\k タグ付きの ASS を書き出す。"""
     parser = argparse.ArgumentParser(description="音声からカラオケタイミングを取得し、ASS字幕を再生成する。")
-    parser.add_argument("audio", help="アライメント対象の音声ファイル (mp3)")
+    parser.add_argument("audio", help="アライメント対象の音声ファイル (mp3 / wav など。分離したボーカルだと精度が上がる)")
     parser.add_argument("subtitles_in", help="歌詞入力（keyframes.zip / subtitles.ass / lyrics.txt）")
     parser.add_argument("subtitles_out", nargs="?", default="subtitles_aligned.ass", help="出力 ASS（既定: subtitles_aligned.ass）")
     parser.add_argument("--model", default="large-v3", help="Whisper モデルサイズ（base / small / medium / large-v3、既定: large-v3）")

@@ -29,13 +29,20 @@ ffmpeg/Whisper を伴わない純粋ロジック（`tests/`）だけ pytest で�
 .venv/bin/python make_cover.py output/output.mp4 --title "曲名" --at 8  # 8秒地点のフレーム
 ```
 
-動作確認を速くしたいときは `--model small` を使う（既定は `large-v3`。モデルは `~/.cache/whisper/` にキャッシュ済み）。`input/` にサンプル一式（mp3 + keyframes.zip + aligned ASS）があり、アライメントのテストに使える。
+動作確認を速くしたいときは `--model small` を使う（既定は `large-v3`。モデルは `~/.cache/whisper/` にキャッシュ済み）。`input/` のサンプルは `chorus.wav`（32 秒）・`chorus_lyrics.txt`・`chorus_aligned.ass`（8 行）・`keyframes.zip`（4 カット）・`video*.mp4`。
+
+描画に触るリファクタは、変更前後で同じ入力を書き出し、フレームのハッシュを比べて確かめる（x264 の出力は同じ入力なら毎回一致する）:
+
+```bash
+.venv/bin/python burn_subs.py input/chorus.wav input/keyframes.zip /tmp/a.mp4 --subs input/chorus_aligned.ass
+ffmpeg -v error -i /tmp/a.mp4 -map 0:v -f framemd5 - | grep -v '^#' | md5
+```
 
 ## Architecture
 
-AP MV エコシステム（keyframes.zip を生成する側）のローカル後処理ツール群。①→②→③ のパイプラインで、各段の受け渡しはファイル。
+AP MV エコシステム（keyframes.zip を生成する側）のローカル後処理ツール群。①→②→③ のパイプラインで、各段の受け渡しはファイル。`beatmv/` は keyframes.zip を使わない別系統で、burn_subs.py の `parse_karaoke`・スタイル読み込みを共有する。
 
-**姉妹リポジトリとの関係**: `~/PycharmProjects/lyric-video` は本リポジトリを Cloud Run Web サービス化したもので、`app/align_subtitles.py` / `app/burn_subs.py` は本リポジトリのほぼコピー（差分は Docker 用 Linux フォントパス程度）。片方を修正したらもう片方への移植が必要か検討すること。
+**姉妹リポジトリとの関係**: `~/PycharmProjects/lyric-video` は本リポジトリを Cloud Run Web サービス化したもので、`app/align_subtitles.py` / `app/burn_subs.py` は本リポジトリからのコピー（差分は Docker 用 Linux フォントパス程度）。ただし burn_subs.py は e7f39e1 で行の割り方を `fit_units` / `best_split_index` にまとめたため、コードの形が異なる（挙動は同じ）。片方を修正したらもう片方への移植が必要か検討すること。
 
 ### align_subtitles.py — 強制アライメント（文字起こしではない）
 
@@ -58,21 +65,19 @@ ASS スタイル + `--style-file` から `RenderConfig` を組み立てる処理
 
 line モードの `render_line_frame` は幅に収まらない行を自動調整する（`fit_line_layout`: 縮小率 `LINE_SHRINK_FLOOR` までは1行のまま縮小、それ以下なら `best_split` で2行折り返し。英語はスペース位置のみ、日本語は全文字境界から幅バランス最良点を選ぶ）。透過 RGBA レイヤーを渡すと透過を保って返す（burn_subs_video.py のオーバーレイ用。box 描画時にモードを維持する実装に依存している）。
 
+フォントは `FONT_CANDIDATES` の順に探索（ヒラギノ角ゴ W7 が最優先）。`load_font()` は make_cover.py からも import されており、字幕とカバーのフォントを一致させている。
+
+**注意**: 出力 MP4 は「1フレームが数秒続く」特殊構造（キーフレームも先頭のみ）のため、`ffmpeg -ss` でのフレーム取り出しは別のフレームを拾って「字幕が無い」ように見えることがある。検証には `-vf "select=eq(n\,N)" -vsync 0` でフレーム番号指定を使うこと。
+
 karaoke モード（既定）の `render_frame` も同じ方針の `fit_karaoke_layout`／`best_split_segs` で自動調整する。こちらは `\k` セグメントを分割単位にする（セグメント内部では割らない）以外は line モードと同じで、縮小→2行折り返しの判断は `fit_units`、割る位置は `best_split_index` に1つにまとめてある（単位が1文字か `\k` セグメントかだけが違う）。どちらかのモードだけ直すと、もう片方と挙動が食い違うので、このコアを直すこと。縦長（ショート動画など）は横長より折り返しが発生しやすい。
 
 ### burn_subs_video.py — 完成済み動画への字幕焼き込み
 
 スライドショーではなく実写 MV 動画（映像・カメラワーク保持）に字幕を乗せる。行ごとに `render_line_frame` で透過 PNG を作り、ffmpeg の `overlay` + `enable='between(t,start,end)'` チェーンで時間指定合成する（音声はコピー）。行の重なりは `build_windows` が「先の行優先」（burn_subs の `event_at` と同じ規則）で解消する。line モード専用（カラオケの文字単位状態をオーバーレイにすると数百入力になるため非対応）。
 
-**注意**: 出力 MP4 は「1フレームが数秒続く」特殊構造（キーフレームも先頭のみ）のため、`ffmpeg -ss` でのフレーム取り出しは別のフレームを拾って「字幕が無い」ように見えることがある。検証には `-vf "select=eq(n\,N)" -vsync 0` でフレーム番号指定を使うこと。
-
-フォントは `FONT_CANDIDATES` の順に探索（ヒラギノ角ゴ W7 が最優先）。`load_font()` は make_cover.py からも import されており、字幕とカバーのフォントを一致させている。
-
 ### make_cover.py — カバー画像生成
 
-MP4 のフレーム（既定は先頭、`--at SEC` で任意の時刻）を ffmpeg で抽出し、Pillow でタイトル＋アーティスト名を合成。`-ss` は出力側に置いている（burn_subs.py の出力はキーフレームが先頭にしかなく、入力側シークでは別のフレームを拾うため）。タイトル省略時は **MP4 の親フォルダ名**を使う（曲名フォルダに動画を置く運用が前提）。アーティスト名の既定は `Digital Armor Style`。長いタイトルは幅 92% に収まるまでフォント自動縮小。ショート版はぼかし+減光した背景の中央に 16:9 フレームを重ねる。
-
-`from burn_subs import load_font` している関係で pysubs2 まで transitively 必要になるため、これも `.venv` 経由での実行が必須。
+MP4 のフレーム（既定は先頭、`--at SEC` で任意の時刻）を ffmpeg で抽出し、Pillow でタイトル＋アーティスト名を合成。`-ss` は出力側に置いている（burn_subs.py の出力はキーフレームが先頭にしかなく、入力側シークでは別のフレームを拾うため）。タイトル省略時は **MP4 の親フォルダ名**を使う（曲名フォルダに動画を置く運用が前提）。アーティスト名の既定は `Digital Armor Style`。長いタイトルは幅 92% に収まるまでフォント自動縮小。ショート版はぼかし+減光した背景の中央に 16:9 フレームを重ねる。`burn_subs` を import するので、これも `.venv` で実行する。
 
 ### beatmv/ — 画像素材なしで音から描く MV
 
@@ -80,12 +85,12 @@ keyframes.zip のスライドショーとは別の作り方。Suno などで作�
 
 - **曲ごとの違いは `songs/<slug>/song.toml` だけに書く**（曲名・音源・作業ディレクトリ・セクションの時刻・`drum_rule`・`lyrics_aligner`）。曲ごとにスクリプトをコピーすると、4K 対応のような改修が片方にしか入らず食い違う（移す前に実際に起きた）。`beats.json` と `lyrics.ass` も同じディレクトリに置く。**`songs/` は git 管理外**（公開リポジトリに曲の歌詞やデータを載せない。このマシンにだけ置く運用）。テストは `tests/fixtures/song/` の架空の曲を使い、実際の曲を読まない。
 - **時刻はレシピではなく、できた音から取る。** Suno はセクションの秒数を守らず、頼んでいない間奏を足す（境界の調律者で 11 秒）。`sections` などには Suno の時刻合わせ・解析の値を書く。
-- **座標・太さ・文字サイズは 1920x1080 基準で書き、`Ctx.px()` を通す。** 既定の倍率は 2（4K）。数値をそのまま書くと 4K で崩れる。scale=1 の絵は移す前の `work/*/build_mv.py` と 1 画素も違わないことを確かめてある。
+- **座標・太さ・文字サイズは 1920x1080 基準で書き、`Ctx.px()` を通す。** 既定の倍率は 2（4K）。数値をそのまま書くと 4K で崩れる。
 - **`drum_rule` は rock / edm。** 帯域ごとに別々にピークを拾う方法は、スネア帯がキックのアタックを拾って両者が同じ打点列になった。オンセットを先に取り、低域とスネア帯の立ち上がりで振り分ける。EDM の四つ打ちはキックのアタックが 1-4kHz にも出るので基準が違う（`drums.classify` のテストに両方の例がある）。
 - **`lyrics_aligner = "whisper"`（align_subtitles.py で作った ASS）は、最初の文字の `\k` に前の行の残りが入る**ので、長いときは歌い出し直前から塗る（`lyrics.load_lines`）。SRT も同じ時刻を使う。
 - **配色は `styles/<name>.json` を burn_subs の `--style-file` と共有する**（`beatmv/style.py`）。スライドショーの MV と配色を揃えるため。beatmv は色だけを読み、大きさ（`font_size`・`outline`）は使わない。beatmv だけのキー（`accent_color`・`background_top`）は `load_style_file` が黙って通すので burn_subs には影響しない。不正な色は burn_subs では警告して捨てるが、beatmv では配色が黙って変わらないようエラーにする。
 - 演出の制約: 画面全体のフラッシュ・明るさの脈動・拍ズームはしない（ちらつきに見える、というユーザーの指摘）。
-- 音源・分離ステム・drums.json・rms.npy・MV は `work/`（git 管理外）。Demucs は再実行で結果が揺れるので、分離済みなら作り直さない。
+- 音源・分離ステム・drums.json・rms.npy・MV は `work/`（git 管理外）。Demucs は既定で入力をランダムにずらして推論する（`--shifts 1`）ため再実行で結果が揺れる。分離済みなら作り直さない。
 - multiprocessing は macOS で spawn なので、ワーカーは `Pool(initializer=...)` で `configure()` し直す（モジュールの状態は引き継がれない）。
 
 ### keyframes.zip の構成

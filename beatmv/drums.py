@@ -45,7 +45,10 @@ def stem_dir(song):
 
 
 def separate(song):
-    """drums.wav / no_drums.wav を作る。分離済みなら何もしない（Demucs は再実行で結果が揺れる）。"""
+    """drums.wav / no_drums.wav を作る。分離済みなら何もしない。
+
+    Demucs は既定で入力をランダムにずらして推論する（--shifts 1）ので、作り直すと打点の検出結果も変わる。
+    """
     drums = os.path.join(stem_dir(song), "drums.wav")
     if not os.path.exists(drums):
         import torch

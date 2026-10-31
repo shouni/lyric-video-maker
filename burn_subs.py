@@ -232,7 +232,7 @@ def fit_units(draw, units, cfg, spacing, split_texts):
     """単位の並びが画像幅に収まるフォントと、2行に割る位置（1行のままなら None）を決める。
 
     まず1行のまま縮小を試み、縮小率が LINE_SHRINK_FLOOR を下回るほど長い場合は
-    2行に折り返してから収まるサイズへ縮小する（ap-comp の fitTitle と同じ方針）。
+    2行に折り返してから収まるサイズへ縮小する（ap-music の overlay.fitTitle と同じ方針）。
     split_texts(idx) は、idx で割ったときに実際に描く2行の文字列を返す（縮小の判定に使う）。
     """
     max_w = cfg.img_size[0] * LINE_MAX_WIDTH_RATIO
@@ -653,7 +653,7 @@ def resolve_subtitles(work_dir, subs_override, keyframes):
 def main():
     """入力を読み込み、字幕フレームを描画して MP4 を書き出す。"""
     parser = argparse.ArgumentParser(description="キーフレーム画像に ASS カラオケ字幕を焼き込み、MP4 を生成する。")
-    parser.add_argument("audio", help="BGM として使う音声ファイル (mp3)")
+    parser.add_argument("audio", help="BGM として使う音声ファイル (mp3 / wav など)")
     parser.add_argument("keyframes", help="キーフレーム ZIP（PNG + inputs.txt + subtitles.ass）")
     parser.add_argument("output", nargs="?", default="output.mp4", help="出力 MP4（既定: output.mp4）")
     parser.add_argument("--subs", dest="subs_override", help="ZIP 内の字幕を上書きする ASS ファイル")
