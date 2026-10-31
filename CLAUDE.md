@@ -58,7 +58,7 @@ ASS スタイル + `--style-file` から `RenderConfig` を組み立てる処理
 
 line モードの `render_line_frame` は幅に収まらない行を自動調整する（`fit_line_layout`: 縮小率 `LINE_SHRINK_FLOOR` までは1行のまま縮小、それ以下なら `best_split` で2行折り返し。英語はスペース位置のみ、日本語は全文字境界から幅バランス最良点を選ぶ）。透過 RGBA レイヤーを渡すと透過を保って返す（burn_subs_video.py のオーバーレイ用。box 描画時にモードを維持する実装に依存している）。
 
-karaoke モード（既定）の `render_frame` も同じ方針の `fit_karaoke_layout`／`best_split_segs` で自動調整する。こちらは `\k` セグメントを分割単位にする（セグメント内部では割らない）以外は line モードと同じ縮小→2行折り返しロジックで、`shrink_to_fit` を両モードで共有している。縦長（ショート動画など）は横長より折り返しが発生しやすい。
+karaoke モード（既定）の `render_frame` も同じ方針の `fit_karaoke_layout`／`best_split_segs` で自動調整する。こちらは `\k` セグメントを分割単位にする（セグメント内部では割らない）以外は line モードと同じで、縮小→2行折り返しの判断は `fit_units`、割る位置は `best_split_index` に1つにまとめてある（単位が1文字か `\k` セグメントかだけが違う）。どちらかのモードだけ直すと、もう片方と挙動が食い違うので、このコアを直すこと。縦長（ショート動画など）は横長より折り返しが発生しやすい。
 
 ### burn_subs_video.py — 完成済み動画への字幕焼き込み
 

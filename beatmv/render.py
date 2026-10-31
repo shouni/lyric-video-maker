@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from beatmv import lyrics as lyr
 from beatmv import song as songmod
 from beatmv import style as stylemod
+from burn_subs import require_ffmpeg
 
 FPS = 30
 FONT_BOLD = "/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc"
@@ -377,6 +378,7 @@ def preview(song_dir, scale, times):
 
 
 def render_video(song_dir, scale):
+    require_ffmpeg("ffmpeg")
     configure(song_dir, scale)
     song = C.song
     frames = round(song.duration * FPS)

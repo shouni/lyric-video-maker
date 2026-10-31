@@ -40,6 +40,8 @@ class RenderConfig:
 
 
 HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
+TAG_RE = re.compile(r"\{[^}]*\}")
+LINE_BREAK_RE = re.compile(r"\\[nNh]")
 
 
 def hex_to_rgb(value):
@@ -89,10 +91,20 @@ def parse_karaoke(raw_text):
     cs = 0
     for m in re.finditer(r'\{\\k(\d+)\}([^{]*)', raw_text):
         k = int(m.group(1))
-        text = re.sub(r'\\[nNh]', '', m.group(2))
+        text = LINE_BREAK_RE.sub("", m.group(2))
         segments.append((cs, cs + k, text))
         cs += k
     return segments
+
+
+def plain_text(raw_text):
+    """ASS イベントのテキストから装飾タグ（\\k など）と改行タグを取り除く。"""
+    return LINE_BREAK_RE.sub("", TAG_RE.sub("", raw_text)).strip()
+
+
+def highlighted_count(segs, elapsed_cs):
+    """行の開始から elapsed_cs 経過した時点で、ハイライト済みの \\k セグメント数を返す。"""
+    return sum(1 for start_cs, _end_cs, _text in segs if elapsed_cs >= start_cs)
 
 
 def read_images_with_durations(inputs_txt):
@@ -170,27 +182,34 @@ def measure_line(draw, text, font, spacing):
     return draw.textlength(text, font=font)
 
 
-def best_split(draw, text, font, spacing):
-    """2行分割の候補から、長い方の実測幅が最小になる分割点を返す。
+def best_split_index(draw, units, font, spacing):
+    """文字列の単位（1文字、または \\k セグメント）の並びを2行に割る位置を返す。
 
-    スペースがあればスペース位置のみを候補にする（英語歌詞の単語を割らない）。
-    無ければ全文字境界を候補にする（日本語歌詞）。分割できない場合は ("text", "")。
+    長い方の行の実測幅が最小になる位置を選ぶ。スペースで終わる単位があればその直後だけを
+    候補にし（英語歌詞の単語を割らない）、無ければ全境界を候補にする（日本語歌詞）。単位の
+    内部では割らない。どこで割っても片方が空になるときは None。
     """
-    candidates = [i + 1 for i, ch in enumerate(text[:-1]) if ch == " "]
+    candidates = [i + 1 for i, u in enumerate(units[:-1]) if u.endswith(" ")]
     if not candidates:
-        candidates = list(range(1, len(text)))
-    best = (text, "")
-    best_w = None
+        candidates = list(range(1, len(units)))
+    best_idx, best_w = None, None
     for idx in candidates:
-        l1 = text[:idx].strip()
-        l2 = text[idx:].strip()
+        l1 = "".join(units[:idx]).strip()
+        l2 = "".join(units[idx:]).strip()
         if not l1 or not l2:
             continue
         w = max(measure_line(draw, l1, font, spacing), measure_line(draw, l2, font, spacing))
         if best_w is None or w < best_w:
-            best_w = w
-            best = (l1, l2)
-    return best
+            best_idx, best_w = idx, w
+    return best_idx
+
+
+def best_split(draw, text, font, spacing):
+    """1行テキストを2行に割る（文字単位）。分割できない場合は (text, "")。"""
+    idx = best_split_index(draw, list(text), font, spacing)
+    if idx is None:
+        return text, ""
+    return text[:idx].strip(), text[idx:].strip()
 
 
 def shrink_to_fit(draw, lines, font, spacing, max_w):
@@ -209,76 +228,61 @@ def shrink_to_fit(draw, lines, font, spacing, max_w):
         size -= 2
 
 
-def fit_line_layout(draw, text, cfg):
-    """テキストが画像幅に収まるフォントと行リスト（1〜2行）を決める。
+def fit_units(draw, units, cfg, spacing, split_texts):
+    """単位の並びが画像幅に収まるフォントと、2行に割る位置（1行のままなら None）を決める。
 
     まず1行のまま縮小を試み、縮小率が LINE_SHRINK_FLOOR を下回るほど長い場合は
     2行に折り返してから収まるサイズへ縮小する（ap-comp の fitTitle と同じ方針）。
+    split_texts(idx) は、idx で割ったときに実際に描く2行の文字列を返す（縮小の判定に使う）。
     """
     max_w = cfg.img_size[0] * LINE_MAX_WIDTH_RATIO
     font = cfg.font
     base_size = getattr(font, "size", 0) or 0
-    if base_size <= 0 or measure_line(draw, text, font, cfg.letter_spacing) <= max_w:
-        return font, [text]
+    full_text = "".join(units)
+    if base_size <= 0 or measure_line(draw, full_text, font, spacing) <= max_w:
+        return font, None
 
-    _, size_one_line = shrink_to_fit(draw, [text], font, cfg.letter_spacing, max_w)
+    _, size_one_line = shrink_to_fit(draw, [full_text], font, spacing, max_w)
     if size_one_line >= base_size * LINE_SHRINK_FLOOR:
-        return font.font_variant(size=size_one_line), [text]
+        return font.font_variant(size=size_one_line), None
 
-    l1, l2 = best_split(draw, text, font, cfg.letter_spacing)
-    if not l2:
-        return font.font_variant(size=size_one_line), [text]
-    fitted, _ = shrink_to_fit(draw, [l1, l2], font, cfg.letter_spacing, max_w)
-    return fitted, [l1, l2]
+    idx = best_split_index(draw, units, font, spacing)
+    if idx is None:
+        return font.font_variant(size=size_one_line), None
+    fitted, _ = shrink_to_fit(draw, split_texts(idx), font, spacing, max_w)
+    return fitted, idx
+
+
+def fit_line_layout(draw, text, cfg):
+    """1行テキストが画像幅に収まるフォントと行リスト（1〜2行、文字単位で割る）を決める。"""
+    def split_texts(idx):
+        return [text[:idx].strip(), text[idx:].strip()]
+
+    font, idx = fit_units(draw, list(text), cfg, cfg.letter_spacing, split_texts)
+    return font, [text] if idx is None else split_texts(idx)
 
 
 def best_split_segs(draw, segs, font, spacing):
-    """カラオケ \\k セグメント列を2行に分割する分割点を返す（best_split のセグメント版）。
+    """カラオケ \\k セグメント列を2行に割る（セグメント単位）。分割できない場合は (segs, [])。
 
-    セグメント内部では割らない（既存ASSは句読点や語末スペースが直前セグメントに
-    吸収されているため、セグメント境界＝best_split の文字/スペース境界に対応する）。
+    既存ASSは句読点や語末スペースが直前セグメントに吸収されているため、セグメント境界は
+    best_split の文字/スペース境界に対応する。
     """
-    texts = [t for _, _, t in segs]
-    candidates = [i + 1 for i, t in enumerate(texts[:-1]) if t.endswith(" ")]
-    if not candidates:
-        candidates = list(range(1, len(segs)))
-    best = (segs, [])
-    best_w = None
-    for idx in candidates:
-        segs1, segs2 = segs[:idx], segs[idx:]
-        text1 = "".join(texts[:idx]).strip()
-        text2 = "".join(texts[idx:]).strip()
-        if not text1 or not text2:
-            continue
-        w = max(measure_line(draw, text1, font, spacing), measure_line(draw, text2, font, spacing))
-        if best_w is None or w < best_w:
-            best_w = w
-            best = (segs1, segs2)
-    return best
+    idx = best_split_index(draw, [t for _, _, t in segs], font, spacing)
+    if idx is None:
+        return segs, []
+    return segs[:idx], segs[idx:]
 
 
 def fit_karaoke_layout(draw, segs, cfg):
-    """カラオケ \\k セグメント列が画像幅に収まるフォントと行分割（1〜2行）を決める。
+    """カラオケ \\k セグメント列が画像幅に収まるフォントと行分割（1〜2行）を決める。"""
+    texts = [t for _, _, t in segs]
 
-    方針は fit_line_layout と同じ（先に縮小、それでも収まらなければ2行に折り返す）。
-    """
-    max_w = cfg.img_size[0] * LINE_MAX_WIDTH_RATIO
-    font = cfg.font
-    base_size = getattr(font, "size", 0) or 0
-    full_text = "".join(t for _, _, t in segs)
-    if base_size <= 0 or measure_line(draw, full_text, font, 0) <= max_w:
-        return font, [segs]
+    def split_texts(idx):
+        return ["".join(texts[:idx]), "".join(texts[idx:])]
 
-    _, size_one_line = shrink_to_fit(draw, [full_text], font, 0, max_w)
-    if size_one_line >= base_size * LINE_SHRINK_FLOOR:
-        return font.font_variant(size=size_one_line), [segs]
-
-    segs1, segs2 = best_split_segs(draw, segs, font, 0)
-    if not segs2:
-        return font.font_variant(size=size_one_line), [segs]
-    line_texts = ["".join(t for _, _, t in segs1), "".join(t for _, _, t in segs2)]
-    fitted, _ = shrink_to_fit(draw, line_texts, font, 0, max_w)
-    return fitted, [segs1, segs2]
+    font, idx = fit_units(draw, texts, cfg, 0, split_texts)
+    return font, [segs] if idx is None else [segs[:idx], segs[idx:]]
 
 
 def render_line_frame(img, text, cfg):
@@ -366,7 +370,7 @@ def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
         return render_line_frame(img, full_text, cfg)
 
     img_w, img_h = cfg.img_size
-    n_highlighted = sum(1 for (s, _e, _text) in segs if elapsed_cs >= s)
+    n_highlighted = highlighted_count(segs, elapsed_cs)
 
     draw = ImageDraw.Draw(img)
     font, seg_lines = fit_karaoke_layout(draw, segs, cfg)
@@ -450,8 +454,7 @@ def build_concat_lines(
         elapsed_cs = (mid - evt[0]) * 100 if evt else 0
         n_hl = 0
         if evt and cfg.mode == "karaoke":
-            segs = parse_karaoke(evt[2])
-            n_hl = sum(1 for (s, _e, _text) in segs if elapsed_cs >= s)
+            n_hl = highlighted_count(parse_karaoke(evt[2]), elapsed_cs)
 
         state_key = (img_file, evt[0] if evt else None, n_hl)
 

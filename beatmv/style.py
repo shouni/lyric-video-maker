@@ -16,12 +16,10 @@ burn_subs.load_style_file は知らないキーを黙って通すので、beatmv
 """
 import json
 import os
-import re
 from dataclasses import dataclass
 
 from beatmv.song import REPO
-
-HEX = re.compile(r"#[0-9A-Fa-f]{6}")
+from burn_subs import HEX_COLOR_RE, hex_to_rgb
 
 # 既定は karaoke_blue と同じ（これまでの MV の配色）
 DEFAULTS = {
@@ -42,9 +40,9 @@ class Palette:
 
 
 def _rgb(value, key, path):
-    if not (isinstance(value, str) and HEX.fullmatch(value)):
+    if not (isinstance(value, str) and HEX_COLOR_RE.fullmatch(value)):
         raise ValueError(f"{path}: {key} は '#RRGGBB' 形式で指定してください（{value!r}）")
-    return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+    return hex_to_rgb(value)
 
 
 def style_path(name):

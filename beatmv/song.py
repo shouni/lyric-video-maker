@@ -8,7 +8,7 @@
 """
 import os
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Tuple
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -20,7 +20,6 @@ LYRICS_ALIGNERS = ("suno", "whisper")
 @dataclass
 class Song:
     slug: str
-    dir: str
     title: str
     audio: str
     work_dir: str
@@ -37,7 +36,7 @@ class Song:
     credit: str = "Made with Suno"
     fade_in: float = 0.5
     fade_out: float = 2.5
-    thumbnail_window: Tuple[float, float] = field(default=(0.0, 0.0))
+    thumbnail_window: Tuple[float, float] = (0.0, 0.0)
 
     def work(self, *parts):
         return os.path.join(self.work_dir, *parts)
@@ -68,7 +67,6 @@ def load(song_dir):
     thumb = d.get("thumbnail", {}).get("window", [0.0, duration])
     return Song(
         slug=os.path.basename(song_dir),
-        dir=song_dir,
         title=d["title"],
         audio=_repo_path(d["audio"]),
         work_dir=_repo_path(d["work_dir"]),
