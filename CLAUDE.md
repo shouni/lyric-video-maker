@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-Makefile は無い。フラットな Python スクリプト4本のリポジトリで、実行がそのまま動作確認になる。
+Makefile は無い。フラットな Python スクリプト4本と、音から MV を描く `beatmv/` パッケージのリポジトリで、実行がそのまま動作確認になる。
 ffmpeg/Whisper を伴わない純粋ロジック（`tests/`）だけ pytest で押さえている。
 
 ```bash
 .venv/bin/python -m pytest tests -q
 ```
 
-依存は `.venv`（Python 3.9）にインストール済み。**必ず `.venv/bin/python` で実行する**こと。システム python3 には pysubs2 / stable-ts が無い。ffmpeg はシステムインストール（brew）。
+依存は `.venv`（Python 3.14。beatmv が `tomllib` を使うので 3.11 以上が必要）にインストール済み。**必ず `.venv/bin/python` で実行する**こと。システム python3 には pysubs2 / stable-ts が無い。ffmpeg はシステムインストール（brew）。
 
 ```bash
 # ① 歌詞アライメント: 音声 + 歌詞 → カラオケタイミング付き ASS
@@ -54,7 +54,7 @@ Whisper 呼び出し以外は純粋関数に分割してある（`load_source_su
 
 ASS スタイル + `--style-file` から `RenderConfig` を組み立てる処理は `build_render_config()` に集約しており、`burn_subs_video.py` も同じ関数を使う（`force_mode="line"` を渡す）。スタイル指定を増やすときはこの関数だけを直せば両方に反映される。
 
-`--style-file`（JSON、`styles/` にプリセット）で描画スタイルを上書きできる。`mode: "line"` はカラオケハイライトなしの1行表示で、文字単位の遷移を集めないため状態数が大幅に減る（サンプルで 223→33）。px 値はすべて PlayResY 基準で指定し実解像度へスケールする、という既存の規約に従うこと。不正値は警告してフォールバックする設計（動画生成自体は失敗させない）。
+`--style-file`（JSON、`styles/` にプリセット。`karaoke_blue` は beatmv の既定の配色を兼ねる）で描画スタイルを上書きできる。`mode: "line"` はカラオケハイライトなしの1行表示で、文字単位の遷移を集めないため状態数が大幅に減る（サンプルで 223→33）。px 値はすべて PlayResY 基準で指定し実解像度へスケールする、という既存の規約に従うこと。不正値は警告してフォールバックする設計（動画生成自体は失敗させない）。
 
 line モードの `render_line_frame` は幅に収まらない行を自動調整する（`fit_line_layout`: 縮小率 `LINE_SHRINK_FLOOR` までは1行のまま縮小、それ以下なら `best_split` で2行折り返し。英語はスペース位置のみ、日本語は全文字境界から幅バランス最良点を選ぶ）。透過 RGBA レイヤーを渡すと透過を保って返す（burn_subs_video.py のオーバーレイ用。box 描画時にモードを維持する実装に依存している）。
 
@@ -73,6 +73,20 @@ karaoke モード（既定）の `render_frame` も同じ方針の `fit_karaoke_
 MP4 のフレーム（既定は先頭、`--at SEC` で任意の時刻）を ffmpeg で抽出し、Pillow でタイトル＋アーティスト名を合成。`-ss` は出力側に置いている（burn_subs.py の出力はキーフレームが先頭にしかなく、入力側シークでは別のフレームを拾うため）。タイトル省略時は **MP4 の親フォルダ名**を使う（曲名フォルダに動画を置く運用が前提）。アーティスト名の既定は `Digital Armor Style`。長いタイトルは幅 92% に収まるまでフォント自動縮小。ショート版はぼかし+減光した背景の中央に 16:9 フレームを重ねる。
 
 `from burn_subs import load_font` している関係で pysubs2 まで transitively 必要になるため、これも `.venv` 経由での実行が必須。
+
+### beatmv/ — 画像素材なしで音から描く MV
+
+keyframes.zip のスライドショーとは別の作り方。Suno などで作った曲を解析し、キックのリング・打楽器の縦線・打点のタイムライン・`\k` 単位で塗る歌詞を Pillow で 1 コマずつ描いて FFmpeg に流す。入口は `python -m beatmv {analyze,render,srt,thumb-bg} songs/<slug>`。
+
+- **曲ごとの違いは `songs/<slug>/song.toml` だけに書く**（曲名・音源・作業ディレクトリ・セクションの時刻・`drum_rule`・`lyrics_aligner`）。曲ごとにスクリプトをコピーすると、4K 対応のような改修が片方にしか入らず食い違う（移す前に実際に起きた）。`beats.json` と `lyrics.ass` も同じディレクトリに置く。**`songs/` は git 管理外**（公開リポジトリに曲の歌詞やデータを載せない。このマシンにだけ置く運用）。テストは `tests/fixtures/song/` の架空の曲を使い、実際の曲を読まない。
+- **時刻はレシピではなく、できた音から取る。** Suno はセクションの秒数を守らず、頼んでいない間奏を足す（境界の調律者で 11 秒）。`sections` などには Suno の時刻合わせ・解析の値を書く。
+- **座標・太さ・文字サイズは 1920x1080 基準で書き、`Ctx.px()` を通す。** 既定の倍率は 2（4K）。数値をそのまま書くと 4K で崩れる。scale=1 の絵は移す前の `work/*/build_mv.py` と 1 画素も違わないことを確かめてある。
+- **`drum_rule` は rock / edm。** 帯域ごとに別々にピークを拾う方法は、スネア帯がキックのアタックを拾って両者が同じ打点列になった。オンセットを先に取り、低域とスネア帯の立ち上がりで振り分ける。EDM の四つ打ちはキックのアタックが 1-4kHz にも出るので基準が違う（`drums.classify` のテストに両方の例がある）。
+- **`lyrics_aligner = "whisper"`（align_subtitles.py で作った ASS）は、最初の文字の `\k` に前の行の残りが入る**ので、長いときは歌い出し直前から塗る（`lyrics.load_lines`）。SRT も同じ時刻を使う。
+- **配色は `styles/<name>.json` を burn_subs の `--style-file` と共有する**（`beatmv/style.py`）。スライドショーの MV と配色を揃えるため。beatmv は色だけを読み、大きさ（`font_size`・`outline`）は使わない。beatmv だけのキー（`accent_color`・`background_top`）は `load_style_file` が黙って通すので burn_subs には影響しない。不正な色は burn_subs では警告して捨てるが、beatmv では配色が黙って変わらないようエラーにする。
+- 演出の制約: 画面全体のフラッシュ・明るさの脈動・拍ズームはしない（ちらつきに見える、というユーザーの指摘）。
+- 音源・分離ステム・drums.json・rms.npy・MV は `work/`（git 管理外）。Demucs は再実行で結果が揺れるので、分離済みなら作り直さない。
+- multiprocessing は macOS で spawn なので、ワーカーは `Pool(initializer=...)` で `configure()` し直す（モジュールの状態は引き継がれない）。
 
 ### keyframes.zip の構成
 
