@@ -27,6 +27,7 @@ ffmpeg/Whisper を伴わない純粋ロジック（`tests/`）だけ pytest で�
 # ③ カバー画像: MP4 のフレーム → cover_youtube.png (1280x720) + cover_short.png (1080x1920)
 .venv/bin/python make_cover.py output/output.mp4 --title "曲名"        # 先頭フレーム
 .venv/bin/python make_cover.py output/output.mp4 --title "曲名" --at 8  # 8秒地点のフレーム
+.venv/bin/python make_cover.py output/output.mp4 --title "曲名" --artist-color 8FE3FF  # アーティスト名を水色に
 ```
 
 動作確認を速くしたいときは `--model small` を使う（既定は `large-v3`。モデルは `~/.cache/whisper/` にキャッシュ済み）。`input/` のサンプルは `chorus.wav`（32 秒）・`chorus_lyrics.txt`・`chorus_aligned.ass`（8 行）・`keyframes.zip`（4 カット）・`video*.mp4`。
