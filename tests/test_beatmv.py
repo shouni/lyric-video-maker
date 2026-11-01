@@ -94,6 +94,16 @@ def test_edm_rule_keeps_kicks_whose_attack_reaches_the_mids():
     assert list(perc) == [2.0, 3.0]  # キックの分を超えて中高域が立った打点だけ（クラップ・ハット）
 
 
+def test_trance_rule_does_not_count_a_kick_as_perc():
+    # edm ではキックのアタックが打楽器の条件も満たし、同じ打点が両方に出た（夜明けの境界線で 131 / 258）
+    t = np.array([1.0, 2.0, 3.0])
+    lr = np.array([3.2, 2.4, -0.9])  # 1・2: キック / 3: 裏拍のハット
+    mr = np.array([3.4, 4.8, 1.3])
+    kick, perc = drums.classify(t, lr, mr, "trance")
+    assert list(kick) == [1.0, 2.0]
+    assert list(perc) == [3.0]
+
+
 def test_unknown_rule_raises():
     with pytest.raises(ValueError):
         drums.classify([1.0], [1.0], [1.0], "jazz")

@@ -10,6 +10,10 @@ Demucs でドラムとそれ以外に分け、ドラム全体のオンセット�
 - edm: 四つ打ちのキックはアタックが 1-4kHz にも強く出る（立ち上がりの中央値 3.1〜3.5）ので、rock の基準
   ではキックが 84 回しか残らなかった（駆け抜けろ Midnight）。低域が立てばキックとし、中高域が低域を
   1.2 以上上回った打点を打楽器（クラップ・ハット・刻み）とする。スネアだけではないので表示は PERC。
+- trance: edm と同じ基準で、キックになった打点は打楽器に数えない。edm ではキックのアタックが中高域の条件も
+  満たし、夜明けの境界線で打楽器 258 回のうち 131 回がキックと同じ打点だった（1〜4 拍に均等なので
+  2・4 拍のクラップではない。駆け抜けろ Midnight も 48%）。裏打ちのハットだけが打楽器に残り、
+  表拍のリングと裏拍の縦線が交互に光る。キックと同時のクラップも落ちるので、それが鳴る曲は edm のまま。
 """
 import json
 import os
@@ -31,9 +35,12 @@ def classify(t, lr, mr, rule):
     if rule == "rock":
         kick = t[(lr > RISE_THRESHOLD) & (lr > mr)]
         perc = t[(mr > RISE_THRESHOLD) & (mr > lr * ROCK_SNARE_VS_LOW)]
-    elif rule == "edm":
-        kick = t[lr > RISE_THRESHOLD]
-        perc = t[(mr > RISE_THRESHOLD) & (mr - lr > EDM_PERC_OVER_LOW)]
+    elif rule in ("edm", "trance"):
+        is_kick = lr > RISE_THRESHOLD
+        is_perc = (mr > RISE_THRESHOLD) & (mr - lr > EDM_PERC_OVER_LOW)
+        if rule == "trance":
+            is_perc &= ~is_kick
+        kick, perc = t[is_kick], t[is_perc]
     else:
         raise ValueError(f"unknown drum rule: {rule!r}")
     return kick, perc
