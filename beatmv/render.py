@@ -69,6 +69,8 @@ class Ctx:
             d = json.load(f)
         self.kick, self.perc = d["kick"], d["snare"]
         self.rms = np.load(song.work("rms.npy"))
+        self.bass_rms = np.load(song.work("bass_rms.npy")) if song.bass_band else None
+        self.BASS_Y = px(605)
 
         self.bg = self._background()
         self.f_title = ImageFont.truetype(FONT_BOLD, px(52))
@@ -218,6 +220,17 @@ def draw_percs(d, t):
             d.line([(x, C.WAVE_Y - hh), (x, C.WAVE_Y + hh)], fill=(255, 255, 255, a), width=C.px(4))
 
 
+def draw_bass(d, t):
+    """ベース: 波形の下の横帯。長さと濃さがベースの音量に合わせて伸び縮みする（bass_band のときだけ）。"""
+    if C.bass_rms is None:
+        return
+    px = C.px
+    v = float(C.bass_rms[min(int(t * FPS), len(C.bass_rms) - 1)])
+    half = px(40) + px(520) * v
+    cx, y = C.W // 2, C.BASS_Y
+    d.line([(cx - half, y), (cx + half, y)], fill=C.pal.accent + (int(60 + 150 * v),), width=px(4))
+
+
 def draw_timeline(d, t):
     """検出した打点を 2 段で流す。再生位置の縦線を通過した打点だけ塗る。"""
     px = C.px
@@ -328,6 +341,7 @@ def draw_motion(base, t, chorus):
     draw_dots(d, t)
     draw_kicks(d, t, chorus)
     draw_percs(d, t)
+    draw_bass(d, t)
     base.alpha_composite(fx.filter(ImageFilter.GaussianBlur(C.px(6))))
     base.alpha_composite(fx)
 

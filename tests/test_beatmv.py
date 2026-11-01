@@ -71,6 +71,12 @@ def test_unknown_choices_are_rejected(tmp_path, field, value):
         songmod.load(write_song(tmp_path, **{field: value}))
 
 
+def test_bass_band_is_off_unless_asked(tmp_path):
+    # 既存の曲の見た目を変えないため、ベースの帯は song.toml で有効にしたときだけ出す
+    assert songmod.load(write_song(tmp_path)).bass_band is False
+    assert songmod.load(write_song(tmp_path, bass_band="true")).bass_band is True
+
+
 # --------------------------------------------------------------------------- ドラムの振り分け
 
 def test_rock_rule_needs_low_to_dominate_for_kick():

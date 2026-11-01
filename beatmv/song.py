@@ -37,6 +37,7 @@ class Song:
     fade_in: float = 0.5
     fade_out: float = 2.5
     thumbnail_window: Tuple[float, float] = (0.0, 0.0)
+    bass_band: bool = False  # 波形の下にベースの音量の帯を出す（Demucs の 4 分割が要る）
 
     def work(self, *parts):
         return os.path.join(self.work_dir, *parts)
@@ -84,4 +85,5 @@ def load(song_dir):
         fade_in=float(d.get("fade_in", 0.5)),
         fade_out=float(d.get("fade_out", 2.5)),
         thumbnail_window=(float(thumb[0]), float(thumb[1])),
+        bass_band=bool(d.get("bass_band", False)),
     )
