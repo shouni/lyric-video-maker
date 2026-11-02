@@ -13,7 +13,7 @@ from typing import List, Tuple
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-DRUM_RULES = ("rock", "edm", "trance")
+DRUM_RULES = ("rock", "edm", "trance", "dnb")
 LYRICS_ALIGNERS = ("suno", "whisper", "hybrid")
 WAVE_SOURCES = ("mix", "vocals")
 
@@ -82,7 +82,7 @@ def load(song_dir):
         lyrics_aligner=aligner,
         beats=os.path.join(song_dir, d.get("beats", "beats.json")),
         drum_rule=drum_rule,
-        perc_label=d.get("perc_label", "SNARE" if drum_rule == "rock" else "PERC"),
+        perc_label=d.get("perc_label", "SNARE" if drum_rule in ("rock", "dnb") else "PERC"),
         sections=[(float(t), str(name)) for t, name in d["sections"]],
         choruses=[(float(a), float(b)) for a, b in d["choruses"]],
         instrumental=[(float(a), float(b)) for a, b in d["instrumental"]],

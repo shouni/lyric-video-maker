@@ -110,6 +110,18 @@ def test_trance_rule_does_not_count_a_kick_as_perc():
     assert list(perc) == [3.0]
 
 
+def test_dnb_rule_keeps_kicks_out_of_the_snare_row_and_drops_ghost_notes():
+    # DnB のキックはアタックが強く、rock では 1 拍目のキックがスネアにも出た（6 曲で 43〜89 回）
+    t = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    lr = np.array([3.0, 0.2, 0.1, 0.3, 0.2, 0.1])  # 1: キック / 2〜6: スネア帯の打点
+    mr = np.array([2.0, 3.5, 3.4, 1.2, 3.6, 1.1])  # 4・6: 立ち上がりの弱いゴーストノート
+    kick, perc = drums.classify(t, lr, mr, "rock")
+    assert 1.0 in perc  # rock ではキックがスネアにも出る
+    kick, perc = drums.classify(t, lr, mr, "dnb")
+    assert list(kick) == [1.0]
+    assert list(perc) == [2.0, 3.0, 5.0]
+
+
 def test_unknown_rule_raises():
     with pytest.raises(ValueError):
         drums.classify([1.0], [1.0], [1.0], "jazz")

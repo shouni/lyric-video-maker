@@ -14,6 +14,12 @@ Demucs でドラムとそれ以外に分け、ドラム全体のオンセット�
   満たし、夜明けの境界線で打楽器 258 回のうち 131 回がキックと同じ打点だった（1〜4 拍に均等なので
   2・4 拍のクラップではない。駆け抜けろ Midnight も 48%）。裏打ちのハットだけが打楽器に残り、
   表拍のリングと裏拍の縦線が交互に光る。キックと同時のクラップも落ちるので、それが鳴る曲は edm のまま。
+- dnb: キックは rock と同じ。スネアは rock の条件から、キックになった打点を外し、残りのうちスネア帯の
+  立ち上がりが弱い下位 DNB_GHOST_QUANTILE を落とす。DnB のキックはアタックが強く、rock では 1 拍目の
+  キックが 1 曲あたり 43〜89 回スネアにも出た。ブレイクビーツのゴーストノートとハットも拾い、スネアが
+  1 小節に 2.5〜3.4 回光った（Digital Armor Style の 6 曲、2026-11-03）。dnb では 1.3〜1.8 回になり、
+  2・4 拍に乗る割合が 6 曲中 5 曲で上がった（Overclock は 57% → 61%、Armor Reboot は 51% → 67%）。
+  Half-Time の曲は 3 拍目にスネアが来るので、2・4 拍の割合は上がらない（Signal Lost 36% → 45%）。
 """
 import json
 import os
@@ -27,6 +33,7 @@ HOP = 256
 RISE_THRESHOLD = 1.0  # 前後 3 フレームでの log 振幅の上昇
 ROCK_SNARE_VS_LOW = 0.6
 EDM_PERC_OVER_LOW = 1.2
+DNB_GHOST_QUANTILE = 0.4  # dnb でスネア候補から落とす、立ち上がりの弱い側の割合
 
 
 def classify(t, lr, mr, rule):
@@ -40,6 +47,12 @@ def classify(t, lr, mr, rule):
         is_perc = (mr > RISE_THRESHOLD) & (mr - lr > EDM_PERC_OVER_LOW)
         if rule == "trance":
             is_perc &= ~is_kick
+        kick, perc = t[is_kick], t[is_perc]
+    elif rule == "dnb":
+        is_kick = (lr > RISE_THRESHOLD) & (lr > mr)
+        is_perc = (mr > RISE_THRESHOLD) & (mr > lr * ROCK_SNARE_VS_LOW) & ~is_kick
+        if is_perc.any():
+            is_perc &= mr >= np.quantile(mr[is_perc], DNB_GHOST_QUANTILE)
         kick, perc = t[is_kick], t[is_perc]
     else:
         raise ValueError(f"unknown drum rule: {rule!r}")
