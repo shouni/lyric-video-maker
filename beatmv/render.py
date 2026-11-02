@@ -37,6 +37,7 @@ WHITE = (255, 255, 255)  # 見出しのセクション名・ラベル・打楽�
 LINE_LINGER = 1.5  # 歌い終わりから行を残す最大秒数
 LYRIC_FONT = 84    # 歌詞の文字の大きさ（1920x1080 基準。長い行は 48 まで縮める）
 HOOK_FONT = 104    # フックの行の文字の大きさ。普通の行より 2 割強大きく、叫びとして見せる
+HOOK_FADE = 0.5    # フックの行の前後で、波形の色を hook_color へ移す秒数
 TL_SPAN = 2.5      # タイムラインで再生位置から左右に見せる秒数
 
 
@@ -60,6 +61,8 @@ class Ctx:
         self.PLAYHEAD_X = (self.TL_X0 + self.TL_X1) // 2
 
         self.lines = lyr.load_lines(song.lyrics, song.lyrics_aligner)
+        # フックの行を歌っている区間（最初の文字の歌い出し〜最後の文字の終わり）。波形の色に使う
+        self.hook_spans = [(segs[0][1], segs[-1][2]) for text, _, _, segs in self.lines if lyr.is_hook_line(text)]
         with open(song.beats) as f:
             down = json.load(f)["downbeats"]
         beats = []
@@ -70,7 +73,7 @@ class Ctx:
         with open(song.work("drums.json")) as f:
             d = json.load(f)
         self.kick, self.perc = d["kick"], d["snare"]
-        self.rms = np.load(song.work("rms.npy"))
+        self.rms = np.load(song.work("vocal_rms.npy" if song.wave == "vocals" else "rms.npy"))
         self.bass_rms = np.load(song.work("bass_rms.npy")) if song.bass_band else None
         self.BASS_Y = px(605)
 
@@ -189,9 +192,23 @@ def draw_dots(d, t):
         d.ellipse([x - r, yy - r, x + r, yy + r], fill=C.pal.accent + (a,))
 
 
+def hook_weight(t):
+    """フックの行を歌っている間 1、その前後 HOOK_FADE 秒で 0 へ移る重み。点滅させず色をゆっくり移すため。"""
+    w = 0.0
+    for s, e in C.hook_spans:
+        w = max(w, min(1.0, (t - (s - HOOK_FADE)) / HOOK_FADE, ((e + HOOK_FADE) - t) / HOOK_FADE))
+    return max(0.0, w)
+
+
+def mix_rgb(a, b, w):
+    return tuple(int(round(x + (y - x) * w)) for x, y in zip(a, b))
+
+
 def draw_wave(d, t, chorus):
-    """波形。振れ幅はドラム以外の RMS、形はゆっくり変わる正弦の和（本物の波形ではない）。"""
+    """波形。振れ幅は song.wave の RMS（mix＝ドラム以外、vocals＝声だけ）、形はゆっくり変わる正弦の和
+    （本物の波形ではない）。フックの行を歌っている間は、色を hook_color へゆっくり寄せる。"""
     px = C.px
+    color = mix_rgb(C.pal.accent, C.pal.hook, hook_weight(t))
     fi = min(int(t * FPS), len(C.rms) - 1)
     amp = px(25) + px(130) * float(C.rms[fi]) * (1.15 if chorus else 1.0)
     pts = []
@@ -201,8 +218,8 @@ def draw_wave(d, t, chorus):
         v = (math.sin(u * 12 + t * 2.1) * 0.6 + math.sin(u * 31 - t * 3.3) * 0.3
              + math.sin(u * 55 + t * 1.3) * 0.1)
         pts.append((x, C.WAVE_Y + v * amp * env))
-    d.line(pts, fill=C.pal.accent + (60,), width=px(10), joint="curve")
-    d.line(pts, fill=C.pal.accent + (230,), width=px(3), joint="curve")
+    d.line(pts, fill=color + (60,), width=px(10), joint="curve")
+    d.line(pts, fill=color + (230,), width=px(3), joint="curve")
 
 
 def draw_kicks(d, t, chorus):

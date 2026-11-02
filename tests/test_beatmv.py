@@ -321,3 +321,30 @@ def test_hook_lines_are_short_english_shouts(text, hook):
 def test_hook_color_defaults_to_cyan():
     from beatmv import style
     assert style.load("karaoke_blue").hook == (0x00, 0xE5, 0xFF)
+
+
+# --------------------------------------------------------------------------- 波形
+
+def test_wave_defaults_to_mix_and_rejects_unknown(tmp_path):
+    assert songmod.load(write_song(tmp_path)).wave == "mix", "既存の曲は作り直しても見た目が変わらない"
+    assert songmod.load(write_song(tmp_path, wave='"vocals"')).wave == "vocals"
+    with pytest.raises(ValueError, match="wave"):
+        songmod.load(write_song(tmp_path, wave='"drums"'))
+
+
+def test_hook_weight_eases_in_and_out_around_hook_lines(monkeypatch):
+    from types import SimpleNamespace
+
+    from beatmv import render
+    monkeypatch.setattr(render, "C", SimpleNamespace(hook_spans=[(10.0, 12.0)]))
+    fade = render.HOOK_FADE
+    assert render.hook_weight(10.0 - fade) == pytest.approx(0.0)
+    assert render.hook_weight(10.0 - fade / 2) == pytest.approx(0.5), "前の HOOK_FADE 秒で寄せ始める"
+    assert render.hook_weight(11.0) == pytest.approx(1.0)
+    assert render.hook_weight(12.0 + fade / 2) == pytest.approx(0.5), "歌い終わってから HOOK_FADE 秒で戻す"
+    assert render.hook_weight(20.0) == 0.0
+
+
+def test_mix_rgb_blends_between_two_colors():
+    from beatmv import render
+    assert render.mix_rgb((0, 0, 0), (100, 200, 50), 0.5) == (50, 100, 25)
