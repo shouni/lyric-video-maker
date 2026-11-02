@@ -35,6 +35,8 @@ FONT_LIGHT = "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"
 WHITE = (255, 255, 255)  # 見出しのセクション名・ラベル・打楽器の縦線・次の行（配色に関わらず白）
 
 LINE_LINGER = 1.5  # 歌い終わりから行を残す最大秒数
+LYRIC_FONT = 84    # 歌詞の文字の大きさ（1920x1080 基準。長い行は 48 まで縮める）
+HOOK_FONT = 104    # フックの行の文字の大きさ。普通の行より 2 割強大きく、叫びとして見せる
 TL_SPAN = 2.5      # タイムラインで再生位置から左右に見せる秒数
 
 
@@ -148,12 +150,17 @@ def ease_out(u):
 # --------------------------------------------------------------------------- 描画
 
 def line_images(i):
-    """行 i の文字画像（未歌唱=白 / 歌唱済み=水色）とトークンごとの右端を作ってキャッシュする。"""
+    """行 i の文字画像（未歌唱=白 / 歌唱済み=水色）とトークンごとの右端を作ってキャッシュする。
+
+    フックの行（`Override! Override!` など、lyrics.is_hook_line）は大きめの文字にし、歌った部分を
+    hook_color で塗る。サビの頭の叫びを、点滅や拍ズームを使わずに文字の大きさと色だけで目立たせる。
+    """
     if i in C.line_cache:
         return C.line_cache[i]
     px = C.px
     text = C.lines[i][0]
-    size = px(84)
+    hook = lyr.is_hook_line(text)
+    size = px(HOOK_FONT if hook else LYRIC_FONT)
     while True:
         font = ImageFont.truetype(FONT_BOLD, size)
         l, t, r, b = font.getbbox(text, stroke_width=px(6))
@@ -162,7 +169,7 @@ def line_images(i):
         size -= px(4)
     w, h = r - l + px(8), b - t + px(8)
     imgs = []
-    for color in (C.pal.unsung, C.pal.sung):
+    for color in (C.pal.unsung, C.pal.hook if hook else C.pal.sung):
         im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         ImageDraw.Draw(im).text((px(4) - l, px(4) - t), text, font=font, fill=color,
                                 stroke_width=px(6), stroke_fill=C.pal.outline)

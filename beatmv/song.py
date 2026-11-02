@@ -14,7 +14,7 @@ from typing import List, Tuple
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 DRUM_RULES = ("rock", "edm", "trance")
-LYRICS_ALIGNERS = ("suno", "whisper")
+LYRICS_ALIGNERS = ("suno", "whisper", "hybrid")
 
 
 @dataclass

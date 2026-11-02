@@ -7,9 +7,12 @@ ASS の出どころは 2 通り（song.toml の lyrics_aligner）:
   繰り上げ、その分を最初の文字の \\k に入れる（「駆」が \\k156 など）。そのまま塗ると歌う前から色が
   付くので、最初の文字が FIRST_SEG_MAX より長いときは終わりの FIRST_SEG_WIPE 秒前から塗る。
   駆け抜けろ Midnight では、Suno の時刻合わせの歌い出しより 0.16〜0.29 秒早い範囲に収まった。
+- hybrid: `python -m beatmv align` が、行の範囲を Suno、行の中の配分を Whisper から取って作ったもの
+  （beatmv/suno_align.py）。最初の文字はそこで詰めてあるので、whisper のような手当てはしない。
 """
 import bisect
 import math
+import re
 
 import pysubs2
 
@@ -21,8 +24,13 @@ FIRST_SEG_WIPE = 0.35
 
 def load_lines(ass_path, aligner):
     """各行を (表示テキスト, 行の開始, 行の終わり, [(トークン, 開始秒, 終了秒), ...]) にする。"""
+    return load_lines_from(pysubs2.load(ass_path), aligner)
+
+
+def load_lines_from(subs, aligner):
+    """読み込み済みの SSAFile から load_lines と同じ形を作る。"""
     out = []
-    for e in pysubs2.load(ass_path):
+    for e in subs:
         t0 = e.start / 1000
         segs = [(txt, t0 + a / 100, t0 + b / 100) for a, b, txt in burn_subs.parse_karaoke(e.text)]
         if not segs:
@@ -33,6 +41,19 @@ def load_lines(ass_path, aligner):
                 segs[0] = (txt, b - FIRST_SEG_WIPE, b)
         out.append(("".join(x[0] for x in segs), t0, e.end / 1000, segs))
     return out
+
+
+# フックの行: 日本語を含まない、4 語以内の英語の行（`Override! Override!`、`Overclock the heart`）。
+# ap-music の edm_hook は Suno 向けにサビの頭をこの形の叫びにするので、歌詞の中から見分けられる。
+HOOK_MAX_WORDS = 4
+_JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff々〆ヶ]")
+_LATIN = re.compile(r"[A-Za-z]")
+
+
+def is_hook_line(text):
+    """日本語を含まず、英字があり、4 語以内の行をフックの行とみなす。"""
+    return (not _JAPANESE.search(text) and bool(_LATIN.search(text))
+            and len(text.split()) <= HOOK_MAX_WORDS)
 
 
 def current_line(lines, t, linger):
