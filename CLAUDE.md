@@ -27,6 +27,7 @@ ffmpeg/Whisper を伴わない純粋ロジック（`tests/`）だけ pytest で�
 # ③ カバー画像: MP4 のフレーム → cover_youtube.png (1280x720) + cover_short.png (1080x1920)
 .venv/bin/python make_cover.py output/output.mp4 --title "曲名"        # 先頭フレーム
 .venv/bin/python make_cover.py output/output.mp4 --title "曲名" --at 8  # 8秒地点のフレーム
+.venv/bin/python make_cover.py output/output.mp4 --title "曲名" --artist-color 8FE3FF  # アーティスト名を水色に
 ```
 
 動作確認を速くしたいときは `--model small` を使う（既定は `large-v3`。モデルは `~/.cache/whisper/` にキャッシュ済み）。`input/` のサンプルは `chorus.wav`（32 秒）・`chorus_lyrics.txt`・`chorus_aligned.ass`（8 行）・`keyframes.zip`（4 カット）・`video*.mp4`。
@@ -81,13 +82,17 @@ MP4 のフレーム（既定は先頭、`--at SEC` で任意の時刻）を ffmp
 
 ### beatmv/ — 画像素材なしで音から描く MV
 
-keyframes.zip のスライドショーとは別の作り方。Suno などで作った曲を解析し、キックのリング・打楽器の縦線・打点のタイムライン・`\k` 単位で塗る歌詞を Pillow で 1 コマずつ描いて FFmpeg に流す。入口は `python -m beatmv {analyze,render,srt,thumb-bg} songs/<slug>`。
+keyframes.zip のスライドショーとは別の作り方。Suno などで作った曲を解析し、キックのリング・打楽器の縦線・打点のタイムライン・`\k` 単位で塗る歌詞を Pillow で 1 コマずつ描いて FFmpeg に流す。入口は `python -m beatmv {analyze,align,render,srt,thumb-bg} songs/<slug>`。
 
 - **曲ごとの違いは `songs/<slug>/song.toml` だけに書く**（曲名・音源・作業ディレクトリ・セクションの時刻・`drum_rule`・`lyrics_aligner`）。曲ごとにスクリプトをコピーすると、4K 対応のような改修が片方にしか入らず食い違う（移す前に実際に起きた）。`beats.json` と `lyrics.ass` も同じディレクトリに置く。**`songs/` は git 管理外**（公開リポジトリに曲の歌詞やデータを載せない。このマシンにだけ置く運用）。テストは `tests/fixtures/song/` の架空の曲を使い、実際の曲を読まない。
 - **時刻はレシピではなく、できた音から取る。** Suno はセクションの秒数を守らず、頼んでいない間奏を足す（境界の調律者で 11 秒）。`sections` などには Suno の時刻合わせ・解析の値を書く。
 - **座標・太さ・文字サイズは 1920x1080 基準で書き、`Ctx.px()` を通す。** 既定の倍率は 2（4K）。数値をそのまま書くと 4K で崩れる。
-- **`drum_rule` は rock / edm。** 帯域ごとに別々にピークを拾う方法は、スネア帯がキックのアタックを拾って両者が同じ打点列になった。オンセットを先に取り、低域とスネア帯の立ち上がりで振り分ける。EDM の四つ打ちはキックのアタックが 1-4kHz にも出るので基準が違う（`drums.classify` のテストに両方の例がある）。
+- **`drum_rule` は rock / edm / trance。** 帯域ごとに別々にピークを拾う方法は、スネア帯がキックのアタックを拾って両者が同じ打点列になった。オンセットを先に取り、低域とスネア帯の立ち上がりで振り分ける。EDM の四つ打ちはキックのアタックが 1-4kHz にも出るので基準が違う（`drums.classify` のテストに両方の例がある）。edm ではキックの打点が打楽器の条件も満たし、PERC の約半分がキックと同じ打点になる（1〜4 拍に均等なのでクラップではない）。trance はそれを打楽器から外す。
+- **打点にするのは、拍の位置で検証できたものだけ。** 演出を足す前に、検出した時刻を `beats.json` の拍と突き合わせ、ずれ（40 ms 以内か）と取りこぼし（鳴っている区間で拍の何割に乗るか）を確かめる。アクセルを踏み抜けでは、ベースの打点は時刻が合っても数が 2〜8 割しか取れず、クラップ／ハットの分割は 2・4 拍に集まらなかったので、どちらも打点にしていない。ベースは音量で描く（`bass_band`、`drums.write_bass_rms`、Demucs の 4 分割を `sep4/` に置く）。
 - **`lyrics_aligner = "whisper"`（align_subtitles.py で作った ASS）は、最初の文字の `\k` に前の行の残りが入る**ので、長いときは歌い出し直前から塗る（`lyrics.load_lines`）。SRT も同じ時刻を使う。
+- **カナで歌わせた曲は `lyrics_aligner = "hybrid"` にし、`python -m beatmv align songs/<slug>` で lyrics.ass を作る**（`beatmv/suno_align.py`）。行の開始と終わりは Suno の時刻合わせ（`work/<slug>/suno_alignment.json`。MCP の audio-lyrics-alignment の応答を保存したもの）、行の中の文字の配分は Whisper（`work/<slug>/lyrics.whisper.ass`。align_subtitles.py の出力）から取る。Suno は行の位置が正確でも文字がカナで、Whisper は漢字に時刻を振れても行の両端がずれる（Overclock の終盤で 2〜4 秒）ため。Whisper の最初の文字は 0.4 秒、最後の文字は 1 秒に詰めてから Suno の行の範囲へ写す。Overclock で手作業で作った字幕と、手で直した 2 行を除いて一致した。行数が合わなければ推測で合わせずに中断し、1.5 秒を超える伸ばしと、2 秒以上ずれた行の開始は「確認」として出すので、その行だけ耳で確かめて手で直す。
+- **波形の振れ幅は `wave` で選ぶ（`mix` が既定、`vocals` は声だけ）。** リング＝キック、縦線＝スネア、帯＝ベースと、ほかの要素は 1 つの音に結びついているので、`vocals` にすると波形＝声になり、画面の要素がすべて 1 つの音に対応する。Overclock では声だけにすると Intro・間奏・Outro の振れ幅が 0.0〜0.03 になり（`mix` では 0.48〜0.90）、歌っている間だけ大きく動いた。`vocal_rms.npy` は analyze が Demucs の 4 分割（`sep4/`）から書く。既定を `mix` のままにしているのは、作り直した既存の曲の見た目が黙って変わらないようにするため。フックの行を歌っている間は、波形の色も `hook_color` へ `HOOK_FADE`（0.5 秒）かけて寄せる（点滅させない）。
+- **フックの行（日本語を含まない 4 語以内の英語の行、`lyrics.is_hook_line`）は大きめの文字（`HOOK_FONT`）にし、歌った部分を `hook_color`（既定はシアン）で塗る。** ap-music の edm_hook が Suno 向けにサビの頭を `Override! Override!` のような叫びにするため。点滅や拍ズームを使わず、大きさと色だけで目立たせる。
 - **配色は `styles/<name>.json` を burn_subs の `--style-file` と共有する**（`beatmv/style.py`）。スライドショーの MV と配色を揃えるため。beatmv は色だけを読み、大きさ（`font_size`・`outline`）は使わない。beatmv だけのキー（`accent_color`・`background_top`）は `load_style_file` が黙って通すので burn_subs には影響しない。不正な色は burn_subs では警告して捨てるが、beatmv では配色が黙って変わらないようエラーにする。
 - 演出の制約: 画面全体のフラッシュ・明るさの脈動・拍ズームはしない（ちらつきに見える、というユーザーの指摘）。
 - 音源・分離ステム・drums.json・rms.npy・MV は `work/`（git 管理外）。Demucs は既定で入力をランダムにずらして推論する（`--shifts 1`）ため再実行で結果が揺れる。分離済みなら作り直さない。

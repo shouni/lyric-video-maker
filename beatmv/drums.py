@@ -10,6 +10,10 @@ Demucs でドラムとそれ以外に分け、ドラム全体のオンセット�
 - edm: 四つ打ちのキックはアタックが 1-4kHz にも強く出る（立ち上がりの中央値 3.1〜3.5）ので、rock の基準
   ではキックが 84 回しか残らなかった（駆け抜けろ Midnight）。低域が立てばキックとし、中高域が低域を
   1.2 以上上回った打点を打楽器（クラップ・ハット・刻み）とする。スネアだけではないので表示は PERC。
+- trance: edm と同じ基準で、キックになった打点は打楽器に数えない。edm ではキックのアタックが中高域の条件も
+  満たし、夜明けの境界線で打楽器 258 回のうち 131 回がキックと同じ打点だった（1〜4 拍に均等なので
+  2・4 拍のクラップではない。駆け抜けろ Midnight も 48%）。裏打ちのハットだけが打楽器に残り、
+  表拍のリングと裏拍の縦線が交互に光る。キックと同時のクラップも落ちるので、それが鳴る曲は edm のまま。
 """
 import json
 import os
@@ -31,9 +35,12 @@ def classify(t, lr, mr, rule):
     if rule == "rock":
         kick = t[(lr > RISE_THRESHOLD) & (lr > mr)]
         perc = t[(mr > RISE_THRESHOLD) & (mr > lr * ROCK_SNARE_VS_LOW)]
-    elif rule == "edm":
-        kick = t[lr > RISE_THRESHOLD]
-        perc = t[(mr > RISE_THRESHOLD) & (mr - lr > EDM_PERC_OVER_LOW)]
+    elif rule in ("edm", "trance"):
+        is_kick = lr > RISE_THRESHOLD
+        is_perc = (mr > RISE_THRESHOLD) & (mr - lr > EDM_PERC_OVER_LOW)
+        if rule == "trance":
+            is_perc &= ~is_kick
+        kick, perc = t[is_kick], t[is_perc]
     else:
         raise ValueError(f"unknown drum rule: {rule!r}")
     return kick, perc
@@ -61,6 +68,55 @@ def separate(song):
             check=True,
         )
     return drums
+
+
+def separate4(song, stem):
+    """Demucs の 4 分割（drums / bass / other / vocals）の stem を返す。分離済みなら何もしない。"""
+    path = song.work("sep4", "htdemucs", os.path.splitext(os.path.basename(song.audio))[0], f"{stem}.wav")
+    if not os.path.exists(path):
+        import torch
+
+        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        subprocess.run(
+            [sys.executable, "-m", "demucs", "-n", "htdemucs", "-d", device, "-o", song.work("sep4"), song.audio],
+            check=True,
+        )
+    return path
+
+
+def separate_bass(song):
+    """bass.wav を作る（Demucs の 4 分割）。分離済みなら何もしない。
+
+    ベースは打点ではなく音量で描く。アクセルを踏み抜けで 1 音ずつ拾おうとしたところ、時刻は 8 分音符の
+    位置から 40 ms 以内に収まった（97%）が、裏打ちの音が続くと立ち上がりが立たず、鳴っている音の一部しか
+    取れなかった（20 秒で 54 回ほどのところ 10〜41 回）。音量なら取りこぼしが起きない。
+    """
+    return separate4(song, "bass")
+
+
+def write_bass_rms(song, fps=30):
+    """帯の長さに使う、ベースの RMS を 1 コマ 1 値で bass_rms.npy に書く。"""
+    import librosa
+
+    y, sr = librosa.load(separate_bass(song), sr=22050, mono=True)
+    rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=sr // fps)[0]
+    rms = np.convolve(rms, np.ones(3) / 3, mode="same")  # 0.1 秒でならす（裏打ちの刻みは残す）
+    np.save(song.work("bass_rms.npy"), np.clip(rms / np.percentile(rms, 98), 0, 1))
+
+
+def write_vocal_rms(song, fps=30):
+    """波形の振れ幅に使う、声だけの RMS を 1 コマ 1 値で vocal_rms.npy に書く（wave = "vocals"）。
+
+    リング＝キック、縦線＝スネア、帯＝ベースと、ほかの要素は 1 つの音に結びついているのに、波形だけが
+    声と伴奏の混ざった音（no_drums）で動いていた。声だけにすると、歌っている間だけ大きく動き、間奏では
+    静まる。ならしは rms.npy と同じ 0.3 秒で、言葉ごとに跳ねないようにする。
+    """
+    import librosa
+
+    y, sr = librosa.load(separate4(song, "vocals"), sr=22050, mono=True)
+    rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=sr // fps)[0]
+    rms = np.convolve(rms, np.ones(9) / 9, mode="same")
+    np.save(song.work("vocal_rms.npy"), np.clip(rms / np.percentile(rms, 98), 0, 1))
 
 
 def onset_rises(drums_wav):
@@ -105,4 +161,8 @@ def analyze(song):
     with open(song.work("drums.json"), "w") as f:
         json.dump(out, f)
     write_rms(song)
+    if song.bass_band:
+        write_bass_rms(song)
+    if song.wave == "vocals":
+        write_vocal_rms(song)
     print(f"kick {len(kick)}  {song.perc_label.lower()} {len(perc)}  ({song.drum_rule})")

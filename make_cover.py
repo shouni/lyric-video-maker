@@ -81,7 +81,7 @@ def draw_styled_text(img, text, center_x, center_y, font, fill, scale):
     )
 
 
-def draw_title_block(img, title, artist, center_y=None):
+def draw_title_block(img, title, artist, center_y=None, artist_color=ARTIST_COLOR):
     """タイトルとアーティスト名を描画する。center_y省略時は下端寄せ。"""
     w, h = img.size
     scale = max(1.0, w / REFERENCE_WIDTH)
@@ -101,7 +101,18 @@ def draw_title_block(img, title, artist, center_y=None):
         artist_y = title_y + title_size * 1.2
 
     draw_styled_text(img, title, w / 2, title_y, title_font, TITLE_COLOR, scale)
-    draw_styled_text(img, artist, w / 2, artist_y, artist_font, ARTIST_COLOR, scale)
+    draw_styled_text(img, artist, w / 2, artist_y, artist_font, artist_color, scale)
+
+
+def parse_hex_color(text):
+    """"8FE3FF" / "#8FE3FF" を RGB のタプルにする。"""
+    text = text.lstrip("#")
+    if len(text) != 6:
+        raise argparse.ArgumentTypeError(f"RRGGBB の 16 進で指定してください: {text}")
+    try:
+        return tuple(int(text[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"RRGGBB の 16 進で指定してください: {text}") from None
 
 
 def center_crop_to_ratio(img, ratio_w, ratio_h):
@@ -117,14 +128,14 @@ def center_crop_to_ratio(img, ratio_w, ratio_h):
     return img.crop((0, top, 0 + w, top + new_h))
 
 
-def make_youtube_cover(frame, title, artist, size=(1280, 720)):
+def make_youtube_cover(frame, title, artist, size=(1280, 720), artist_color=ARTIST_COLOR):
     """通常YouTube用 16:9 カバー。"""
     img = center_crop_to_ratio(frame, 16, 9).resize(size, Image.LANCZOS).convert("RGBA")
-    draw_title_block(img, title, artist)
+    draw_title_block(img, title, artist, artist_color=artist_color)
     return img.convert("RGB")
 
 
-def make_short_cover(frame, title, artist, size=(1080, 1920)):
+def make_short_cover(frame, title, artist, size=(1080, 1920), artist_color=ARTIST_COLOR):
     """ショート用 9:16 カバー。ぼかし背景の中央に16:9フレーム、下部にタイトル。"""
     w, h = size
 
@@ -140,7 +151,7 @@ def make_short_cover(frame, title, artist, size=(1080, 1920)):
 
     # テキストはフレーム下端と画像下端の中間に置く
     text_center = (fg_top + fg_h + h) / 2 - w * FONT_SIZE_RATIO * 0.6
-    draw_title_block(img, title, artist, center_y=text_center)
+    draw_title_block(img, title, artist, center_y=text_center, artist_color=artist_color)
     return img.convert("RGB")
 
 
@@ -149,6 +160,10 @@ def main():
     parser.add_argument("video", help="入力MP4のパス")
     parser.add_argument("--title", help="タイトル（省略時はMP4の親フォルダ名）")
     parser.add_argument("--artist", default=DEFAULT_ARTIST, help=f"アーティスト名（既定: {DEFAULT_ARTIST}）")
+    parser.add_argument(
+        "--artist-color", type=parse_hex_color, default=ARTIST_COLOR, metavar="RRGGBB",
+        help="アーティスト名の色（既定: 金 FFD700）",
+    )
     parser.add_argument("--outdir", help="出力フォルダ（省略時はMP4と同じフォルダ）")
     parser.add_argument(
         "--at", type=float, default=0.0, metavar="SEC",
@@ -169,12 +184,12 @@ def main():
 
     frame = extract_frame(video_path, args.at)
 
-    youtube = make_youtube_cover(frame, title, args.artist)
+    youtube = make_youtube_cover(frame, title, args.artist, artist_color=args.artist_color)
     youtube_path = os.path.join(outdir, "cover_youtube.png")
     youtube.save(youtube_path)
     print(f"wrote {youtube_path} ({youtube.size[0]}x{youtube.size[1]})")
 
-    short = make_short_cover(frame, title, args.artist)
+    short = make_short_cover(frame, title, args.artist, artist_color=args.artist_color)
     short_path = os.path.join(outdir, "cover_short.png")
     short.save(short_path)
     print(f"wrote {short_path} ({short.size[0]}x{short.size[1]})")

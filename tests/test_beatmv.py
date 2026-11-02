@@ -71,6 +71,12 @@ def test_unknown_choices_are_rejected(tmp_path, field, value):
         songmod.load(write_song(tmp_path, **{field: value}))
 
 
+def test_bass_band_is_off_unless_asked(tmp_path):
+    # 既存の曲の見た目を変えないため、ベースの帯は song.toml で有効にしたときだけ出す
+    assert songmod.load(write_song(tmp_path)).bass_band is False
+    assert songmod.load(write_song(tmp_path, bass_band="true")).bass_band is True
+
+
 # --------------------------------------------------------------------------- ドラムの振り分け
 
 def test_rock_rule_needs_low_to_dominate_for_kick():
@@ -92,6 +98,16 @@ def test_edm_rule_keeps_kicks_whose_attack_reaches_the_mids():
     kick, perc = drums.classify(t, lr, mr, "edm")
     assert list(kick) == [1.0, 2.0]
     assert list(perc) == [2.0, 3.0]  # キックの分を超えて中高域が立った打点だけ（クラップ・ハット）
+
+
+def test_trance_rule_does_not_count_a_kick_as_perc():
+    # edm ではキックのアタックが打楽器の条件も満たし、同じ打点が両方に出た（夜明けの境界線で 131 / 258）
+    t = np.array([1.0, 2.0, 3.0])
+    lr = np.array([3.2, 2.4, -0.9])  # 1・2: キック / 3: 裏拍のハット
+    mr = np.array([3.4, 4.8, 1.3])
+    kick, perc = drums.classify(t, lr, mr, "trance")
+    assert list(kick) == [1.0, 2.0]
+    assert list(perc) == [3.0]
 
 
 def test_unknown_rule_raises():
@@ -225,3 +241,110 @@ def test_accent_defaults_to_primary_and_bad_colors_fail(tmp_path, monkeypatch):
 def test_unknown_style_in_song_is_rejected(tmp_path):
     with pytest.raises(ValueError):
         songmod.load(write_song(tmp_path, style='"no_such_style"'))
+
+
+# --------------------------------------------------------------------------- hybrid（Suno + Whisper）
+
+def suno_word(word, start, end):
+    return {"word": word, "start_s": start, "end_s": end, "success": True, "p_align": 1}
+
+
+# Suno の audio-lyrics-alignment の形: 行の区切りは語の頭の改行、セクションタグは語の中に混ざる
+SUNO_WORDS = [
+    suno_word("[Intro: instrumental only]\n\n\n[Verse: sparse breakbeat]\nカ", 16.46, 16.65),
+    suno_word("ケル", 16.65, 19.37),
+    suno_word("\nOver", 58.90, 59.29),
+    suno_word("clock", 59.29, 60.46),
+    suno_word("k\n\n[Outro: instrumental only]\n\n\n[End]\n", 60.46, 61.00),
+]
+
+
+def test_suno_line_spans_follow_newlines_and_ignore_tags():
+    from beatmv import suno_align
+    spans = suno_align.line_spans(SUNO_WORDS)
+    assert spans == [(16.46, 19.37), (58.90, 61.00)], "タグのあとの改行で行を切らず、最後の語は前の行に入れる"
+
+
+def test_hybrid_keeps_whisper_shares_inside_the_suno_span(tmp_path):
+    from beatmv import suno_align
+    # Whisper: 1 行目は前の行の残りで最初の文字が 2 秒、2 行目は最後の文字が間奏まで 3 秒伸びている
+    ass = write_ass(tmp_path / "w.ass", [
+        (14000, 18300, r"{\k200}駆{\k150}け{\k80}る"),
+        (57000, 62000, r"{\k50}Over{\k150}clock{\k300}!"),
+    ])
+    subs, warnings = suno_align.merge(str(ass), SUNO_WORDS)
+
+    lines = lyrics.load_lines_from(subs, "hybrid")
+    (_, s1, e1, segs1), (_, s2, e2, segs2) = lines
+    assert (s1, e1) == pytest.approx((16.46, 19.37), abs=0.01), "行の範囲は Suno"
+    assert (s2, e2) == pytest.approx((58.90, 61.00), abs=0.01)
+    # 1 行目: 最初の文字だけ 0.4 秒に詰め、残りは Whisper の配分（0.4 : 1.5 : 0.8）のまま引き伸ばす
+    widths = [b - a for _, a, b in segs1]
+    assert widths[1] / widths[0] == pytest.approx(1.5 / 0.4, rel=0.05)
+    assert widths[2] / widths[1] == pytest.approx(0.8 / 1.5, rel=0.05)
+    # 2 行目: 3 秒の最後の文字は 1 秒に詰めてから写す
+    widths = [b - a for _, a, b in segs2]
+    assert widths[2] / widths[1] == pytest.approx(1.0 / 1.5, rel=0.05)
+    assert any("1 行目" in w for w in warnings), "長く残った伸ばしは確認を促す"
+
+
+def test_hybrid_refuses_when_line_counts_differ(tmp_path):
+    from beatmv import suno_align
+    ass = write_ass(tmp_path / "w.ass", [(1000, 2000, r"{\k100}a")])
+    with pytest.raises(ValueError, match="行数が合いません"):
+        suno_align.merge(str(ass), SUNO_WORDS)
+
+
+def test_hybrid_is_an_accepted_aligner_and_skips_the_whisper_wipe(tmp_path):
+    songmod.load(write_song(tmp_path, lyrics_aligner='"hybrid"'))
+    ass = write_ass(tmp_path / "a.ass", [(37540, 42380, r"{\k156}駆{\k20}け")])
+    (_, _, _, segs), = lyrics.load_lines(str(ass), "hybrid")
+    assert segs[0][1] == pytest.approx(37.54), "hybrid は align で詰め済みなので、さらに詰めない"
+
+
+# --------------------------------------------------------------------------- フックの行
+
+@pytest.mark.parametrize("text,hook", [
+    ("Override! Override!", True),
+    ("Overclock the heart", True),
+    ("Armor Reboot!", True),
+    ("Hard Reset! Hard Reset!", True),
+    ("Afterglow, 鳴り止まないよ", False),       # 日本語が混ざる行はフックの叫びではない
+    ("Run through the night and never stop", False),  # 4 語を超える英語の行
+    ("もっと、もっと", False),
+    ("！？", False),
+])
+def test_hook_lines_are_short_english_shouts(text, hook):
+    assert lyrics.is_hook_line(text) is hook
+
+
+def test_hook_color_defaults_to_cyan():
+    from beatmv import style
+    assert style.load("karaoke_blue").hook == (0x00, 0xE5, 0xFF)
+
+
+# --------------------------------------------------------------------------- 波形
+
+def test_wave_defaults_to_mix_and_rejects_unknown(tmp_path):
+    assert songmod.load(write_song(tmp_path)).wave == "mix", "既存の曲は作り直しても見た目が変わらない"
+    assert songmod.load(write_song(tmp_path, wave='"vocals"')).wave == "vocals"
+    with pytest.raises(ValueError, match="wave"):
+        songmod.load(write_song(tmp_path, wave='"drums"'))
+
+
+def test_hook_weight_eases_in_and_out_around_hook_lines(monkeypatch):
+    from types import SimpleNamespace
+
+    from beatmv import render
+    monkeypatch.setattr(render, "C", SimpleNamespace(hook_spans=[(10.0, 12.0)]))
+    fade = render.HOOK_FADE
+    assert render.hook_weight(10.0 - fade) == pytest.approx(0.0)
+    assert render.hook_weight(10.0 - fade / 2) == pytest.approx(0.5), "前の HOOK_FADE 秒で寄せ始める"
+    assert render.hook_weight(11.0) == pytest.approx(1.0)
+    assert render.hook_weight(12.0 + fade / 2) == pytest.approx(0.5), "歌い終わってから HOOK_FADE 秒で戻す"
+    assert render.hook_weight(20.0) == 0.0
+
+
+def test_mix_rgb_blends_between_two_colors():
+    from beatmv import render
+    assert render.mix_rgb((0, 0, 0), (100, 200, 50), 0.5) == (50, 100, 25)

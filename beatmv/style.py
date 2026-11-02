@@ -10,6 +10,7 @@ beatmv が読むのは色だけで、font_size や outline の太さは使わな
 | outline_color | 縁取り | 縁取りと背景グラデーションの下の色 |
 | accent_color | （使わない） | リング・波形・点・グリッド・拍の四角・タイムライン・曲名。省略時は primary_color |
 | background_top | （使わない） | 背景グラデーションの上の色 |
+| hook_color | （使わない） | フックの行（lyrics.is_hook_line）の歌唱済みの色。省略時はシアン（カバーのアーティスト名と同じ） |
 
 burn_subs.load_style_file は知らないキーを黙って通すので、beatmv だけのキーを足しても burn_subs は
 変わらない。
@@ -27,6 +28,7 @@ DEFAULTS = {
     "secondary_color": "#FFFFFF",
     "outline_color": "#0B1A3A",
     "background_top": "#04091A",
+    "hook_color": "#00E5FF",
 }
 
 
@@ -37,6 +39,7 @@ class Palette:
     outline: tuple
     accent: tuple
     background_top: tuple
+    hook: tuple
 
 
 def _rgb(value, key, path):
@@ -64,4 +67,5 @@ def load(name):
         outline=_rgb(c["outline_color"], "outline_color", path),
         accent=_rgb(c["accent_color"], "accent_color", path),
         background_top=_rgb(c["background_top"], "background_top", path),
+        hook=_rgb(c["hook_color"], "hook_color", path),
     )

@@ -35,6 +35,9 @@ FONT_LIGHT = "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"
 WHITE = (255, 255, 255)  # 見出しのセクション名・ラベル・打楽器の縦線・次の行（配色に関わらず白）
 
 LINE_LINGER = 1.5  # 歌い終わりから行を残す最大秒数
+LYRIC_FONT = 84    # 歌詞の文字の大きさ（1920x1080 基準。長い行は 48 まで縮める）
+HOOK_FONT = 104    # フックの行の文字の大きさ。普通の行より 2 割強大きく、叫びとして見せる
+HOOK_FADE = 0.5    # フックの行の前後で、波形の色を hook_color へ移す秒数
 TL_SPAN = 2.5      # タイムラインで再生位置から左右に見せる秒数
 
 
@@ -58,6 +61,8 @@ class Ctx:
         self.PLAYHEAD_X = (self.TL_X0 + self.TL_X1) // 2
 
         self.lines = lyr.load_lines(song.lyrics, song.lyrics_aligner)
+        # フックの行を歌っている区間（最初の文字の歌い出し〜最後の文字の終わり）。波形の色に使う
+        self.hook_spans = [(segs[0][1], segs[-1][2]) for text, _, _, segs in self.lines if lyr.is_hook_line(text)]
         with open(song.beats) as f:
             down = json.load(f)["downbeats"]
         beats = []
@@ -68,7 +73,9 @@ class Ctx:
         with open(song.work("drums.json")) as f:
             d = json.load(f)
         self.kick, self.perc = d["kick"], d["snare"]
-        self.rms = np.load(song.work("rms.npy"))
+        self.rms = np.load(song.work("vocal_rms.npy" if song.wave == "vocals" else "rms.npy"))
+        self.bass_rms = np.load(song.work("bass_rms.npy")) if song.bass_band else None
+        self.BASS_Y = px(605)
 
         self.bg = self._background()
         self.f_title = ImageFont.truetype(FONT_BOLD, px(52))
@@ -146,12 +153,17 @@ def ease_out(u):
 # --------------------------------------------------------------------------- 描画
 
 def line_images(i):
-    """行 i の文字画像（未歌唱=白 / 歌唱済み=水色）とトークンごとの右端を作ってキャッシュする。"""
+    """行 i の文字画像（未歌唱=白 / 歌唱済み=水色）とトークンごとの右端を作ってキャッシュする。
+
+    フックの行（`Override! Override!` など、lyrics.is_hook_line）は大きめの文字にし、歌った部分を
+    hook_color で塗る。サビの頭の叫びを、点滅や拍ズームを使わずに文字の大きさと色だけで目立たせる。
+    """
     if i in C.line_cache:
         return C.line_cache[i]
     px = C.px
     text = C.lines[i][0]
-    size = px(84)
+    hook = lyr.is_hook_line(text)
+    size = px(HOOK_FONT if hook else LYRIC_FONT)
     while True:
         font = ImageFont.truetype(FONT_BOLD, size)
         l, t, r, b = font.getbbox(text, stroke_width=px(6))
@@ -160,7 +172,7 @@ def line_images(i):
         size -= px(4)
     w, h = r - l + px(8), b - t + px(8)
     imgs = []
-    for color in (C.pal.unsung, C.pal.sung):
+    for color in (C.pal.unsung, C.pal.hook if hook else C.pal.sung):
         im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         ImageDraw.Draw(im).text((px(4) - l, px(4) - t), text, font=font, fill=color,
                                 stroke_width=px(6), stroke_fill=C.pal.outline)
@@ -180,9 +192,23 @@ def draw_dots(d, t):
         d.ellipse([x - r, yy - r, x + r, yy + r], fill=C.pal.accent + (a,))
 
 
+def hook_weight(t):
+    """フックの行を歌っている間 1、その前後 HOOK_FADE 秒で 0 へ移る重み。点滅させず色をゆっくり移すため。"""
+    w = 0.0
+    for s, e in C.hook_spans:
+        w = max(w, min(1.0, (t - (s - HOOK_FADE)) / HOOK_FADE, ((e + HOOK_FADE) - t) / HOOK_FADE))
+    return max(0.0, w)
+
+
+def mix_rgb(a, b, w):
+    return tuple(int(round(x + (y - x) * w)) for x, y in zip(a, b))
+
+
 def draw_wave(d, t, chorus):
-    """波形。振れ幅はドラム以外の RMS、形はゆっくり変わる正弦の和（本物の波形ではない）。"""
+    """波形。振れ幅は song.wave の RMS（mix＝ドラム以外、vocals＝声だけ）、形はゆっくり変わる正弦の和
+    （本物の波形ではない）。フックの行を歌っている間は、色を hook_color へゆっくり寄せる。"""
     px = C.px
+    color = mix_rgb(C.pal.accent, C.pal.hook, hook_weight(t))
     fi = min(int(t * FPS), len(C.rms) - 1)
     amp = px(25) + px(130) * float(C.rms[fi]) * (1.15 if chorus else 1.0)
     pts = []
@@ -192,8 +218,8 @@ def draw_wave(d, t, chorus):
         v = (math.sin(u * 12 + t * 2.1) * 0.6 + math.sin(u * 31 - t * 3.3) * 0.3
              + math.sin(u * 55 + t * 1.3) * 0.1)
         pts.append((x, C.WAVE_Y + v * amp * env))
-    d.line(pts, fill=C.pal.accent + (60,), width=px(10), joint="curve")
-    d.line(pts, fill=C.pal.accent + (230,), width=px(3), joint="curve")
+    d.line(pts, fill=color + (60,), width=px(10), joint="curve")
+    d.line(pts, fill=color + (230,), width=px(3), joint="curve")
 
 
 def draw_kicks(d, t, chorus):
@@ -216,6 +242,17 @@ def draw_percs(d, t):
         for sx in (-1, 1):
             x = C.W // 2 + sx * off
             d.line([(x, C.WAVE_Y - hh), (x, C.WAVE_Y + hh)], fill=(255, 255, 255, a), width=C.px(4))
+
+
+def draw_bass(d, t):
+    """ベース: 波形の下の横帯。長さと濃さがベースの音量に合わせて伸び縮みする（bass_band のときだけ）。"""
+    if C.bass_rms is None:
+        return
+    px = C.px
+    v = float(C.bass_rms[min(int(t * FPS), len(C.bass_rms) - 1)])
+    half = px(40) + px(520) * v
+    cx, y = C.W // 2, C.BASS_Y
+    d.line([(cx - half, y), (cx + half, y)], fill=C.pal.accent + (int(60 + 150 * v),), width=px(4))
 
 
 def draw_timeline(d, t):
@@ -328,6 +365,7 @@ def draw_motion(base, t, chorus):
     draw_dots(d, t)
     draw_kicks(d, t, chorus)
     draw_percs(d, t)
+    draw_bass(d, t)
     base.alpha_composite(fx.filter(ImageFilter.GaussianBlur(C.px(6))))
     base.alpha_composite(fx)
 

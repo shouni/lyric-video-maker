@@ -1,7 +1,7 @@
 """beatmv の入口。サブコマンドは曲のディレクトリ（songs/<slug>）を受け取る。"""
 import argparse
 
-from beatmv import drums, lyrics, render, song as songmod, thumbnail
+from beatmv import drums, lyrics, render, song as songmod, suno_align, thumbnail
 
 
 def main():
@@ -22,6 +22,11 @@ def main():
     t = sub.add_parser("thumb-bg", help="サムネイルの背景（1280x720、文字なし）を書き出す")
     t.add_argument("song_dir")
 
+    al = sub.add_parser("align", help="Suno と Whisper の時刻合わせを組み合わせて lyrics.ass を書く（hybrid）")
+    al.add_argument("song_dir")
+    al.add_argument("--whisper", help="align_subtitles.py の出力（既定: work/<slug>/lyrics.whisper.ass）")
+    al.add_argument("--suno", help="Suno の時刻合わせの JSON（既定: work/<slug>/suno_alignment.json）")
+
     args = ap.parse_args()
     song = songmod.load(args.song_dir)
 
@@ -37,6 +42,16 @@ def main():
         out = song.work(f"{song.slug}.srt")
         subs = lyrics.to_srt(lyrics.load_lines(song.lyrics, song.lyrics_aligner), out)
         print(f"{out}  {len(subs)} lines")
+    elif args.cmd == "align":
+        whisper = args.whisper or song.work("lyrics.whisper.ass")
+        suno = args.suno or song.work("suno_alignment.json")
+        subs, warnings = suno_align.merge(whisper, suno_align.load_words(suno))
+        subs.save(song.lyrics)
+        print(f"{song.lyrics}  {len(subs)} lines")
+        for w in warnings:
+            print(f"  確認: {w}")
+        if song.lyrics_aligner != "hybrid":
+            print(f'  song.toml の lyrics_aligner を "hybrid" にしてください（今は {song.lyrics_aligner!r}）')
     elif args.cmd == "thumb-bg":
         out = song.work("thumb_bg.png")
         at = thumbnail.background(args.song_dir, out)

@@ -13,8 +13,9 @@ from typing import List, Tuple
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-DRUM_RULES = ("rock", "edm")
-LYRICS_ALIGNERS = ("suno", "whisper")
+DRUM_RULES = ("rock", "edm", "trance")
+LYRICS_ALIGNERS = ("suno", "whisper", "hybrid")
+WAVE_SOURCES = ("mix", "vocals")
 
 
 @dataclass
@@ -37,6 +38,8 @@ class Song:
     fade_in: float = 0.5
     fade_out: float = 2.5
     thumbnail_window: Tuple[float, float] = (0.0, 0.0)
+    bass_band: bool = False  # 波形の下にベースの音量の帯を出す（Demucs の 4 分割が要る）
+    wave: str = "mix"  # 波形の振れ幅の元。mix＝ドラム以外の音、vocals＝声だけ（Demucs の 4 分割が要る）
 
     def work(self, *parts):
         return os.path.join(self.work_dir, *parts)
@@ -58,6 +61,10 @@ def load(song_dir):
     aligner = d["lyrics_aligner"]
     if aligner not in LYRICS_ALIGNERS:
         raise ValueError(f"lyrics_aligner must be one of {LYRICS_ALIGNERS}: {aligner!r}")
+
+    wave = d.get("wave", "mix")
+    if wave not in WAVE_SOURCES:
+        raise ValueError(f"wave must be one of {WAVE_SOURCES}: {wave!r}")
 
     style = d.get("style", "karaoke_blue")
     if not os.path.exists(os.path.join(REPO, "styles", f"{style}.json")):
@@ -84,4 +91,6 @@ def load(song_dir):
         fade_in=float(d.get("fade_in", 0.5)),
         fade_out=float(d.get("fade_out", 2.5)),
         thumbnail_window=(float(thumb[0]), float(thumb[1])),
+        bass_band=bool(d.get("bass_band", False)),
+        wave=wave,
     )
