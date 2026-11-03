@@ -73,6 +73,7 @@ class Ctx:
         with open(song.work("drums.json")) as f:
             d = json.load(f)
         self.kick, self.perc = d["kick"], d["snare"]
+        self.ghost = d.get("ghost", [])  # dnb のゴーストノート・ハット（タイムラインに小さく出すだけ）
         self.rms = np.load(song.work("vocal_rms.npy" if song.wave == "vocals" else "rms.npy"))
         self.bass_rms = np.load(song.work("bass_rms.npy")) if song.bass_band else None
         self.BASS_Y = px(605)
@@ -269,6 +270,15 @@ def draw_timeline(d, t):
     for label, hits, y, color in rows:
         d.text((C.TL_X0 - px(24) - f.getlength(label), y - px(12)), label, font=f, fill=(255, 255, 255, 150))
         d.line([(C.TL_X0, y), (C.TL_X1, y)], fill=(255, 255, 255, 35), width=px(1))
+        if hits is C.perc:  # ゴーストノートは同じ段に小さく薄く（強いスネアより先に描いて下に敷く）
+            for h in C.ghost[bisect.bisect_left(C.ghost, t - TL_SPAN):bisect.bisect_right(C.ghost, t + TL_SPAN)]:
+                x = C.PLAYHEAD_X + (h - t) * px_per_s
+                edge = min(1.0, (min(x - C.TL_X0, C.TL_X1 - x)) / px(80))
+                r = px(4)
+                if h <= t:
+                    d.rectangle([x - r, y - r, x + r, y + r], fill=color + (int(150 * edge),))
+                else:
+                    d.rectangle([x - r, y - r, x + r, y + r], outline=color + (int(110 * edge),), width=px(1))
         lo = bisect.bisect_left(hits, t - TL_SPAN)
         hi = bisect.bisect_right(hits, t + TL_SPAN)
         for h in hits[lo:hi]:
