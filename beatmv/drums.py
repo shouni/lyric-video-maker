@@ -20,6 +20,7 @@ Demucs でドラムとそれ以外に分け、ドラム全体のオンセット�
   1 小節に 2.5〜3.4 回光った（Digital Armor Style の 6 曲、2026-11-03）。dnb では 1.3〜1.8 回になり、
   2・4 拍に乗る割合が 6 曲中 5 曲で上がった（Overclock は 57% → 61%、Armor Reboot は 51% → 67%）。
   Half-Time の曲は 3 拍目にスネアが来るので、2・4 拍の割合は上がらない（Signal Lost 36% → 45%）。
+  落とした弱い打点は drums.json の ghost に残し、スネアの段に小さく薄い印で出す（画面中央の縦線は光らせない）。
 """
 import json
 import os
@@ -49,14 +50,25 @@ def classify(t, lr, mr, rule):
             is_perc &= ~is_kick
         kick, perc = t[is_kick], t[is_perc]
     elif rule == "dnb":
-        is_kick = (lr > RISE_THRESHOLD) & (lr > mr)
-        is_perc = (mr > RISE_THRESHOLD) & (mr > lr * ROCK_SNARE_VS_LOW) & ~is_kick
-        if is_perc.any():
-            is_perc &= mr >= np.quantile(mr[is_perc], DNB_GHOST_QUANTILE)
-        kick, perc = t[is_kick], t[is_perc]
+        kick, perc, _ = dnb_split(t, lr, mr)
     else:
         raise ValueError(f"unknown drum rule: {rule!r}")
     return kick, perc
+
+
+def dnb_split(t, lr, mr):
+    """dnb の (kick, snare, ghost)。ghost はスネア候補のうち立ち上がりの弱い側（ゴーストノート・ハット）。
+
+    ghost を捨てると「鳴っているのに表示されない」打点になった（2026-11-03 のユーザーの指摘）ので、
+    スネアの段に小さく薄い印で出せるよう、落とした分も返す。
+    """
+    t, lr, mr = np.asarray(t), np.asarray(lr), np.asarray(mr)
+    is_kick = (lr > RISE_THRESHOLD) & (lr > mr)
+    cand = (mr > RISE_THRESHOLD) & (mr > lr * ROCK_SNARE_VS_LOW) & ~is_kick
+    strong = cand.copy()
+    if cand.any():
+        strong &= mr >= np.quantile(mr[cand], DNB_GHOST_QUANTILE)
+    return t[is_kick], t[strong], t[cand & ~strong]
 
 
 def stem_dir(song):
@@ -171,6 +183,8 @@ def analyze(song):
     # キー名は互換のため snare のまま（edm では打楽器全般）
     out = {"kick": [round(float(x), 3) for x in kick],
            "snare": [round(float(x), 3) for x in perc]}
+    if song.drum_rule == "dnb":
+        out["ghost"] = [round(float(x), 3) for x in dnb_split(t, lr, mr)[2]]
     with open(song.work("drums.json"), "w") as f:
         json.dump(out, f)
     write_rms(song)

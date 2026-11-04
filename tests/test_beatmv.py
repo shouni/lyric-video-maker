@@ -122,6 +122,17 @@ def test_dnb_rule_keeps_kicks_out_of_the_snare_row_and_drops_ghost_notes():
     assert list(perc) == [2.0, 3.0, 5.0]
 
 
+def test_dnb_split_keeps_the_dropped_ghost_notes():
+    # 落としたゴーストノートは「鳴っているのに表示されない」ので、別の列として返す
+    t = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    lr = np.array([3.0, 0.2, 0.1, 0.3, 0.2, 0.1])
+    mr = np.array([2.0, 3.5, 3.4, 1.2, 3.6, 1.1])
+    kick, snare, ghost = drums.dnb_split(t, lr, mr)
+    assert list(kick) == [1.0]
+    assert list(snare) == [2.0, 3.0, 5.0]
+    assert list(ghost) == [4.0, 6.0]
+
+
 def test_unknown_rule_raises():
     with pytest.raises(ValueError):
         drums.classify([1.0], [1.0], [1.0], "jazz")
