@@ -44,7 +44,7 @@ def load_lines_from(subs, aligner):
 
 
 # フックの行: 日本語を含まない、4 語以内の英語の行（`Override! Override!`、`Overclock the heart`）。
-# ap-music の edm_hook は Suno 向けにサビの頭をこの形の叫びにするので、歌詞の中から見分けられる。
+# Suno 向けのプロンプトでサビの頭をこの形の叫びにしているので、歌詞の中から見分けられる。
 HOOK_MAX_WORDS = 4
 _JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff々〆ヶ]")
 _LATIN = re.compile(r"[A-Za-z]")

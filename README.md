@@ -7,9 +7,12 @@
 
 ## 🎯 概要
 
-**Lyric Video Maker** は、音声ファイル（mp3 / wav など）とキーフレーム ZIP ファイルから、**カラオケ字幕付き MP4 動画**を生成する Python スクリプト群です。完成済みの MV 動画へ字幕を乗せることもできます。
+**Lyric Video Maker** は、曲から MV と歌詞字幕を作る Python のツール群です。作り方は 2 通りあります。
 
-ワークフローは 3 段階です（② は素材が静止画か動画かで2種類）。
+- **beatmv（音から描く MV）**：画像素材を使わず、曲を解析してキック・スネア・ベース・歌詞を 1 コマずつ描きます（4K）。→ [beatmv](#-beatmv画像素材なしで音から描く-mv)
+- **キーフレーム ZIP からカラオケ動画**：音声ファイル（mp3 / wav など）とキーフレーム ZIP から、**カラオケ字幕付き MP4 動画**を作ります。完成済みの MV 動画へ字幕を乗せることもできます。
+
+キーフレーム ZIP からカラオケ動画を作るワークフローは 3 段階です（② は素材が静止画か動画かで2種類）。
 
 ```
 ① align_subtitles.py
@@ -28,7 +31,6 @@
 既にタイミング済みの ASS がある場合は ② だけ実行すれば OK です。
 歌詞がプレーンテキスト（.txt）しかない場合も ① にそのまま渡せます。
 
-画像素材を使わず、曲の音から MV を描く別の作り方もあります（[beatmv](#-beatmv画像素材なしで音から描く-mv)）。
 
 ---
 
@@ -231,16 +233,21 @@ songs/<slug>/
 ```
 
 ```sh
-.venv/bin/python -m beatmv analyze  songs/midnight   # Demucs でドラム分離 → キック/打楽器の打点、波形用の音量
-.venv/bin/python -m beatmv render   songs/midnight   # MV（既定 4K。--scale 1 で 1080p、--preview 45,100 で静止画）
-.venv/bin/python -m beatmv srt      songs/midnight   # YouTube 字幕（SRT）
-.venv/bin/python -m beatmv thumb-bg songs/midnight   # サムネイルの背景（曲名は別途 ap-music の ApplyTitle で載せる）
+.venv/bin/python -m beatmv analyze  songs/<slug>   # Demucs でドラム分離 → キック/スネアの打点、波形用の音量
+.venv/bin/python -m beatmv align    songs/<slug>   # Suno と Whisper の時刻合わせを組み合わせて lyrics.ass を作る（hybrid）
+.venv/bin/python -m beatmv render   songs/<slug>   # MV（既定 4K。--scale 1 で 1080p、--preview 45,100 で静止画）
+.venv/bin/python -m beatmv srt      songs/<slug>   # YouTube 字幕（SRT）
+.venv/bin/python -m beatmv thumb-bg songs/<slug>   # サムネイルの背景（文字なし。曲名は自作の作曲パイプラインで載せる）
 ```
 
 - **時刻はレシピではなく音から取る。** Suno はセクションの秒数を守らず、頼んでいない間奏を足すことがあります。`sections` / `choruses` / `instrumental` には、Suno の時刻合わせと解析から取った実際の時刻を書きます。
 - **ドラムの振り分けは曲で選ぶ**（`drum_rule`）。`rock` は低域が主役の打点をキック、`edm` は四つ打ちのキックのアタックが中高域にも出るので低域が立てばキックとし、2 段目は打楽器全般（`PERC`）として表示します。`trance` は `edm` と同じ基準で、キックになった打点を打楽器に数えません（`edm` ではキックのアタックが打楽器にも数えられ、表拍で縦線とリングが同時に光ります）。キックと同時のクラップが鳴る曲は `edm` のままにします。
+- **`dnb` はスネアからキックとゴーストノートを外す。** キックは `rock` と同じ基準で取り、スネアからはキックと重なる打点と、立ち上がりの弱い打点（ゴーストノート・ハット）を外します。外した打点はスネアの段に小さく薄い印で出し、画面中央の縦線は光らせません。DnB の 6 曲で、スネアが 1 小節に光る回数が 2.5〜3.4 回から 1.3〜1.8 回になり、2・4 拍に乗る割合が上がりました（Half-Time の曲は 3 拍目なので上がりません）。
 - **ベースは音量の帯で見せる**（`bass_band = true` のときだけ）。Demucs の 4 分割でベースを取り出し、その音量に合わせて波形の下の横帯が伸び縮みします。打点（1 音ずつ）にしないのは、裏打ちのベースが続くと音の立ち上がりが立たず、鳴っている音の一部しか拾えなかったためです。クラップとハイハットを分けて 3 段目にする案も試しましたが、2・4 拍のクラップはキックと重なって区別できず、裏拍のハイハットも一部しか取れなかったので入れていません。
 - **配色は `styles/` を burn_subs と共有する**（`style`、既定 `karaoke_blue`）。beatmv が使うのは色だけで、`primary_color`（歌った部分）・`secondary_color`（まだの部分）・`outline_color`（縁取りと背景の下の色）に加え、beatmv だけの `accent_color`（リング・波形・タイムライン・曲名。省略時は `primary_color`）と `background_top`（背景の上の色）を読みます。`font_size` などの大きさは beatmv では使いません（文字の大きさは beatmv のレイアウトで決めるため）。
+- **カナで歌わせた曲は `lyrics_aligner = "hybrid"` にし、`beatmv align` で lyrics.ass を作る。** 行の開始と終わりは Suno の時刻合わせ（`work/<slug>/suno_alignment.json`）、行の中の文字の配分は Whisper（`work/<slug>/lyrics.whisper.ass`、align_subtitles.py の出力）から取ります。Suno は行の位置が正確でも文字がカナで返り、Whisper は漢字に時刻を振れても行の両端がずれるためです。行数が合わなければ推測で合わせずに中断し、ずれの大きい行は「確認」として出すので、その行だけ耳で確かめます。
+- **波形の元は `wave` で選ぶ**：`mix`（ドラム以外の音、既定）か `vocals`（声だけ。Demucs の 4 分割が要る）。
+- **フックの行は文字の大きさと色で目立たせる。** 日本語を含まない 4 語以内の英語の行（`Override! Override!` など）は文字を大きめにし、歌った部分を `hook_color` で塗り、その前後で波形の色も `hook_color` へ寄せます。点滅や拍ズームは使いません。
 - **歌詞の出どころで塗り始めの扱いが違う**（`lyrics_aligner`）。`whisper`（align_subtitles.py）は行の開始が前の行の終わりまで繰り上がるので、最初の文字が長いときは歌い出しの直前から塗ります。
 
 ---
