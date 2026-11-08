@@ -107,8 +107,9 @@ frames_tmp*/
 *.zip
 *.ass
 
-# beatmv: 曲ごとの設定（songs/）と、音源・分離ステム・MV などの生成物（work/）はこのマシンにだけ置く
-/songs/
-/work/
+# beatmv: 曲ごとの設定（songs/）と作業ディレクトリ（work/）は、非公開の lyric-video-works へのシンボリックリンク。
+# 末尾に / を付けるとリンク（ディレクトリではない）に当たらないので付けない
+/songs
+/work
 # テスト用の架空の曲の字幕（*.ass は上で無視しているので戻す）
 !/tests/fixtures/**/*.ass

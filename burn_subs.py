@@ -232,7 +232,7 @@ def fit_units(draw, units, cfg, spacing, split_texts):
     """単位の並びが画像幅に収まるフォントと、2行に割る位置（1行のままなら None）を決める。
 
     まず1行のまま縮小を試み、縮小率が LINE_SHRINK_FLOOR を下回るほど長い場合は
-    2行に折り返してから収まるサイズへ縮小する（ap-music の overlay.fitTitle と同じ方針）。
+    2行に折り返してから収まるサイズへ縮小する。
     split_texts(idx) は、idx で割ったときに実際に描く2行の文字列を返す（縮小の判定に使う）。
     """
     max_w = cfg.img_size[0] * LINE_MAX_WIDTH_RATIO
