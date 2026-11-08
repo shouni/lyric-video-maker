@@ -40,6 +40,8 @@ class Song:
     thumbnail_window: Tuple[float, float] = (0.0, 0.0)
     bass_band: bool = False  # 波形の下にベースの音量の帯を出す（Demucs の 4 分割が要る）
     wave: str = "mix"  # 波形の振れ幅の元。mix＝ドラム以外の音、vocals＝声だけ（Demucs の 4 分割が要る）
+    # 歌詞の訳（song_dir 内のテキスト、字幕 1 行につき 1 行）。あれば各行の下に訳を出し、次の行の予告は出さない
+    translation: str = ""
 
     def work(self, *parts):
         return os.path.join(self.work_dir, *parts)
@@ -93,4 +95,19 @@ def load(song_dir):
         thumbnail_window=(float(thumb[0]), float(thumb[1])),
         bass_band=bool(d.get("bass_band", False)),
         wave=wave,
+        translation=os.path.join(song_dir, d["translation"]) if d.get("translation") else "",
     )
+
+
+def load_translation(song, n_lines):
+    """訳を字幕の行数ぶん読む。行数が違えば中断する（1 行ずれると、全部の行に別の行の訳が付く）。
+
+    空の行は「この行は訳を出さない」（`Only the pulse` のような繰り返しの断片など）。
+    """
+    if not song.translation:
+        return None
+    with open(song.translation, encoding="utf-8") as f:
+        rows = [r.strip() for r in f.read().rstrip("\n").split("\n")]
+    if len(rows) != n_lines:
+        raise ValueError(f"{song.translation}: 訳が {len(rows)} 行、字幕が {n_lines} 行です。1 行ずつ対応させてください")
+    return rows

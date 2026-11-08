@@ -11,6 +11,9 @@
 信用できないので、先に最初の文字を FIRST_SEG_CAP、最後の文字を LAST_SEG_CAP までに詰めてから、
 Suno の行の範囲へ線形に引き伸ばす。
 
+英語で歌わせた曲（lyrics_aligner = "suno"）は Suno の時刻合わせがそのまま字幕になるので、Whisper を
+使わず words_to_ass で語ごとの \\k を書く。
+
 Suno の時刻合わせは MCP からしか取れないので、呼び出し側が JSON を work/<slug>/suno_alignment.json に
 保存しておく（audio-lyrics-alignment の応答そのまま、または words の配列）。
 """
@@ -29,6 +32,9 @@ LAST_SEG_CAP = 1.0
 HELD_WARN = 1.5
 # 行の開始がこれ以上ずれる行は、どちらの時刻が正しいかを耳で確かめる（Overclock の終盤は 2〜4 秒）。
 START_WARN = 2.0
+
+# 英語の字幕（words_to_ass）で、語の間の空きをこれより長ければ文字のない \\k にする。
+GAP_TOKEN = 0.15
 
 _TAG = re.compile(r"\[[^\]]*\]")
 
@@ -111,3 +117,49 @@ def merge(whisper_ass, words):
                             f"（Whisper {whisper_start:.1f} 秒 / Suno {span[0]:.1f} 秒）。"
                             "Suno の時刻を採っています")
     return subs, warnings
+
+
+def words_to_ass(words):
+    """Suno の words だけから、行ごとに語単位の \\k を持つ SSAFile を作る（lyrics_aligner = "suno"）。
+
+    英語で歌わせた曲は Suno の時刻合わせの語がそのまま表示する歌詞なので、Whisper を通さない。
+    行の切り方は line_spans と同じ。改行をまたぐ語（`s\\nColor`）は、改行の前を前の行の最後の語に
+    つなぎ、後ろを新しい行の最初の語にする。語の時刻は Suno のまま変えない。
+    """
+    lines = []
+    for w in words:
+        text = _TAG.sub("", w["word"])
+        start, end = float(w["start_s"]), float(w["end_s"])
+        if "\n" in text and text.rsplit("\n", 1)[1].strip():
+            head, tail = text.rsplit("\n", 1)
+            head = head.replace("\n", "")
+            if head.strip() and lines:
+                tok, a, b = lines[-1][-1]
+                lines[-1][-1] = (tok + head, a, b)
+            lines.append([(tail, start, end)])
+        else:
+            text = text.replace("\n", "")
+            if not lines:
+                lines.append([])
+            lines[-1].append((text, start, end))
+
+    subs = pysubs2.SSAFile()
+    for segs in lines:
+        segs = [s for s in segs if s[0]]
+        if not segs:
+            continue
+        segs[0] = (segs[0][0].lstrip(), segs[0][1], segs[0][2])
+        segs[-1] = (segs[-1][0].rstrip(), segs[-1][1], segs[-1][2])
+        # 語の間の空き（前の語の終わり〜次の語の歌い出し）が GAP_TOKEN 秒を超えたら、文字のない \\k を
+        # 挟む。挟まないと次の語が空きの間じゅう塗られ、歌う前から色が付く
+        parts, t = [], segs[0][1]
+        for tok, a, e in segs:
+            if a - t > GAP_TOKEN:
+                parts.append(("", t, a))
+                t = a
+            parts.append((tok, t, max(e, t)))
+            t = max(e, t)
+        cs = [round(parts[0][1] * 100)] + [round(e * 100) for _, _, e in parts]
+        text = "".join(f"{{\\k{cs[i + 1] - cs[i]}}}{tok}" for i, (tok, _, _) in enumerate(parts))
+        subs.append(pysubs2.SSAEvent(start=cs[0] * 10, end=cs[-1] * 10, text=text))
+    return subs

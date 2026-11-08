@@ -234,7 +234,7 @@ songs/<slug>/
 
 ```sh
 .venv/bin/python -m beatmv analyze  songs/<slug>   # Demucs でドラム分離 → キック/スネアの打点、波形用の音量
-.venv/bin/python -m beatmv align    songs/<slug>   # Suno と Whisper の時刻合わせを組み合わせて lyrics.ass を作る（hybrid）
+.venv/bin/python -m beatmv align    songs/<slug>   # lyrics.ass を作る（suno: Suno の時刻合わせだけ / hybrid: Whisper と組み合わせる）
 .venv/bin/python -m beatmv render   songs/<slug>   # MV（既定 4K。--scale 1 で 1080p、--preview 45,100 で静止画）
 .venv/bin/python -m beatmv srt      songs/<slug>   # YouTube 字幕（SRT）
 .venv/bin/python -m beatmv thumb-bg songs/<slug>   # サムネイルの背景（文字なし。曲名は自作の作曲パイプラインで載せる）
@@ -246,6 +246,8 @@ songs/<slug>/
 - **ベースは音量の帯で見せる**（`bass_band = true` のときだけ）。Demucs の 4 分割でベースを取り出し、その音量に合わせて波形の下の横帯が伸び縮みします。打点（1 音ずつ）にしないのは、裏打ちのベースが続くと音の立ち上がりが立たず、鳴っている音の一部しか拾えなかったためです。クラップとハイハットを分けて 3 段目にする案も試しましたが、2・4 拍のクラップはキックと重なって区別できず、裏拍のハイハットも一部しか取れなかったので入れていません。
 - **配色は `styles/` を burn_subs と共有する**（`style`、既定 `karaoke_blue`）。beatmv が使うのは色だけで、`primary_color`（歌った部分）・`secondary_color`（まだの部分）・`outline_color`（縁取りと背景の下の色）に加え、beatmv だけの `accent_color`（リング・波形・タイムライン・曲名。省略時は `primary_color`）と `background_top`（背景の上の色）を読みます。`font_size` などの大きさは beatmv では使いません（文字の大きさは beatmv のレイアウトで決めるため）。
 - **カナで歌わせた曲は `lyrics_aligner = "hybrid"` にし、`beatmv align` で lyrics.ass を作る。** 行の開始と終わりは Suno の時刻合わせ（`work/<slug>/suno_alignment.json`）、行の中の文字の配分は Whisper（`work/<slug>/lyrics.whisper.ass`、align_subtitles.py の出力）から取ります。Suno は行の位置が正確でも文字がカナで返り、Whisper は漢字に時刻を振れても行の両端がずれるためです。行数が合わなければ推測で合わせずに中断し、ずれの大きい行は「確認」として出すので、その行だけ耳で確かめます。
+- **英語で歌わせた曲は `lyrics_aligner = "suno"` にし、`beatmv align` で lyrics.ass を作る。** Suno の時刻合わせの語がそのまま字幕になるので、語ごとに塗ります。語と語の間の空きは文字のない区間にするので、次の語は歌い出しから塗り始めます。
+- **歌詞の訳は `translation` で出す**（song.toml と同じディレクトリのテキスト。字幕 1 行につき 1 行、空の行はその行の訳を出さない）。訳は塗らずに歌詞の下へ行と一緒に出し、そのあいだは次の行の予告を出しません。行数が字幕と違えば中断します。`beatmv srt` は訳の SRT（`<slug>.ja.srt`）も書きます。
 - **波形の元は `wave` で選ぶ**：`mix`（ドラム以外の音、既定）か `vocals`（声だけ。Demucs の 4 分割が要る）。
 - **フックの行は文字の大きさと色で目立たせる。** 日本語を含まない 4 語以内の英語の行（`Override! Override!` など）は文字を大きめにし、歌った部分を `hook_color` で塗り、その前後で波形の色も `hook_color` へ寄せます。点滅や拍ズームは使いません。
 - **歌詞の出どころで塗り始めの扱いが違う**（`lyrics_aligner`）。`whisper`（align_subtitles.py）は行の開始が前の行の終わりまで繰り上がるので、最初の文字が長いときは歌い出しの直前から塗ります。

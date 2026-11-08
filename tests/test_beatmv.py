@@ -371,3 +371,69 @@ def test_hook_weight_eases_in_and_out_around_hook_lines(monkeypatch):
 def test_mix_rgb_blends_between_two_colors():
     from beatmv import render
     assert render.mix_rgb((0, 0, 0), (100, 200, 50), 0.5) == (50, 100, 25)
+
+
+# --------------------------------------------------------------------------- 英語の字幕（Suno だけ）と訳
+
+ENGLISH_WORDS = [
+    suno_word("[Verse: light breaks]\nStatic", 34.689, 35.334),
+    suno_word(" is", 35.354, 35.55),
+    suno_word(" gone", 35.55, 35.987),
+    suno_word(" from", 37.535, 37.942),
+    suno_word(" the roof", 38.0, 38.5),
+    suno_word("s\nColor", 41.0, 41.4),  # 改行をまたぐ語: "s" は前の行、"Color" は次の行
+    suno_word(" glows\n\n[Outro: instrumental]\n\n[End]\n", 41.4, 42.0),
+]
+
+
+def test_suno_words_become_word_timed_lines():
+    from beatmv import suno_align
+    lines = lyrics.load_lines_from(suno_align.words_to_ass(ENGLISH_WORDS), "suno")
+    assert [t for t, *_ in lines] == ["Static is gone from the roofs", "Color glows"]
+    (_, s, _, segs), (_, s2, e2, _) = lines
+    assert s == pytest.approx(34.69, abs=0.01) and (s2, e2) == pytest.approx((41.0, 42.0), abs=0.01)
+    # 「gone」と「from」の間の 1.5 秒は文字のない \k にする。「from」は歌い出しから塗り始める
+    frm = next(seg for seg in segs if seg[0] == " from")
+    assert frm[1] == pytest.approx(37.53, abs=0.01)
+
+
+def write_translation_song(tmp_path, rows):
+    (tmp_path / "ja.txt").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return songmod.load(write_song(tmp_path, translation='"ja.txt"'))
+
+
+def test_translation_needs_one_row_per_line(tmp_path):
+    s = write_translation_song(tmp_path, ["ノイズが消えた", "", "色が光る"])
+    assert songmod.load_translation(s, 3) == ["ノイズが消えた", "", "色が光る"], "空の行は訳を出さない行"
+    with pytest.raises(ValueError, match="1 行ずつ"):
+        songmod.load_translation(s, 2)
+
+
+def test_translation_is_off_unless_asked(tmp_path):
+    s = songmod.load(write_song(tmp_path))
+    assert s.translation == "" and songmod.load_translation(s, 5) is None
+
+
+def test_render_draws_the_translation_under_the_lyric(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "drums.json").write_text(json.dumps({"kick": [6.0], "snare": [6.5]}))
+    np.save(work / "rms.npy", np.full(12 * 30, 0.5))
+    song_dir = tmp_path / "song"
+    song_dir.mkdir()
+    toml = open(os.path.join(FIXTURE, "song.toml")).read().replace('"work/fixture"', f'"{work}"')
+    n = len(pysubs2.load(os.path.join(FIXTURE, "lyrics.ass")))
+    # [thumbnail] の表より前に置く（後ろに足すと thumbnail の項目になる）
+    (song_dir / "song.toml").write_text('translation = "ja.txt"\n' + toml)
+    (song_dir / "ja.txt").write_text("\n".join(["訳"] * n) + "\n", encoding="utf-8")
+    for name in ("beats.json", "lyrics.ass"):
+        (song_dir / name).write_bytes(open(os.path.join(FIXTURE, name), "rb").read())
+
+    from beatmv import render
+
+    render.configure(str(song_dir), 1)
+    with_trans = np.asarray(render.render_image(7.1))
+    render.C.translation = [""] * n
+    without = np.asarray(render.render_image(7.1))
+    band = slice(render.C.LYRIC_Y + 40, render.C.LYRIC_Y + 160)
+    assert (with_trans[band] != without[band]).any(), "訳は歌詞の下の帯に描かれる"

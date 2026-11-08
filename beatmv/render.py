@@ -38,6 +38,9 @@ LINE_LINGER = 1.5  # 歌い終わりから行を残す最大秒数
 LYRIC_FONT = 84    # 歌詞の文字の大きさ（1920x1080 基準。長い行は 48 まで縮める）
 HOOK_FONT = 104    # フックの行の文字の大きさ。普通の行より 2 割強大きく、叫びとして見せる
 HOOK_FADE = 0.5    # フックの行の前後で、波形の色を hook_color へ移す秒数
+TRANS_FONT = 46    # 訳の文字の大きさ。歌詞（84）の半分強で、塗られる歌詞が主役のまま読める大きさ
+TRANS_GAP = 30     # 歌詞の下端から訳までの空き
+FONT_TRANS = "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc"  # W3 は輪郭を付けると細い線が潰れる
 TL_SPAN = 2.5      # タイムラインで再生位置から左右に見せる秒数
 
 
@@ -61,6 +64,7 @@ class Ctx:
         self.PLAYHEAD_X = (self.TL_X0 + self.TL_X1) // 2
 
         self.lines = lyr.load_lines(song.lyrics, song.lyrics_aligner)
+        self.translation = songmod.load_translation(song, len(self.lines))
         # フックの行を歌っている区間（最初の文字の歌い出し〜最後の文字の終わり）。波形の色に使う
         self.hook_spans = [(segs[0][1], segs[-1][2]) for text, _, _, segs in self.lines if lyr.is_hook_line(text)]
         with open(song.beats) as f:
@@ -82,6 +86,7 @@ class Ctx:
         self.f_title = ImageFont.truetype(FONT_BOLD, px(52))
         self.f_sec = ImageFont.truetype(FONT_LIGHT, px(26))
         self.f_next = ImageFont.truetype(FONT_LIGHT, px(40))
+        self.f_trans = ImageFont.truetype(FONT_TRANS, px(TRANS_FONT))
         self.f_tl = ImageFont.truetype(FONT_LIGHT, px(22))
         self.f_big = ImageFont.truetype(FONT_BOLD, px(110))
         self.f_credit = ImageFont.truetype(FONT_LIGHT, px(30))
@@ -360,12 +365,34 @@ def draw_lyrics(base, t):
         layer.putalpha(layer.getchannel("A").point(lambda v: int(v * appear)))
     base.alpha_composite(layer, (x, y))
 
+    if C.translation is not None:
+        draw_translation(base, i, y + white.height, appear)
+        return
     # 次の行を小さく薄く（間奏をまたぐ行は出さない）
     if i + 1 < len(C.lines) and C.lines[i + 1][1] - t < 4.0:
         nt = C.lines[i + 1][0]
         f = C.f_next
         ImageDraw.Draw(base).text(((C.W - f.getlength(nt)) / 2, C.LYRIC_Y + px(90)), nt, font=f,
                                   fill=(255, 255, 255, 90))
+
+
+def draw_translation(base, i, lyric_bottom, appear):
+    """行 i の訳を歌詞の下に出す。塗らずに行と一緒に出し、行と一緒に消える（読む速さは人による）。
+
+    訳があるときは次の行の予告を出さない。同じ場所に 3 段目まで重なると、どれを読むのか分からない。
+    """
+    text = C.translation[i]
+    if not text:
+        return
+    px = C.px
+    f = C.f_trans
+    l, t, r, b = f.getbbox(text, stroke_width=px(4))
+    im = Image.new("RGBA", (r - l + px(8), b - t + px(8)), (0, 0, 0, 0))
+    ImageDraw.Draw(im).text((px(4) - l, px(4) - t), text, font=f, fill=C.pal.unsung,
+                            stroke_width=px(4), stroke_fill=C.pal.outline)
+    if appear < 1:
+        im.putalpha(im.getchannel("A").point(lambda v: int(v * appear)))
+    base.alpha_composite(im, ((C.W - im.width) // 2, int(lyric_bottom + px(TRANS_GAP))))
 
 
 def draw_motion(base, t, chorus):

@@ -22,7 +22,7 @@ def main():
     t = sub.add_parser("thumb-bg", help="サムネイルの背景（1280x720、文字なし）を書き出す")
     t.add_argument("song_dir")
 
-    al = sub.add_parser("align", help="Suno と Whisper の時刻合わせを組み合わせて lyrics.ass を書く（hybrid）")
+    al = sub.add_parser("align", help="lyrics.ass を書く。suno は Suno の時刻合わせだけ、hybrid は Whisper と組み合わせる")
     al.add_argument("song_dir")
     al.add_argument("--whisper", help="align_subtitles.py の出力（既定: work/<slug>/lyrics.whisper.ass）")
     al.add_argument("--suno", help="Suno の時刻合わせの JSON（既定: work/<slug>/suno_alignment.json）")
@@ -40,8 +40,18 @@ def main():
             print(render.render_video(args.song_dir, args.scale))
     elif args.cmd == "srt":
         out = song.work(f"{song.slug}.srt")
-        subs = lyrics.to_srt(lyrics.load_lines(song.lyrics, song.lyrics_aligner), out)
+        lines = lyrics.load_lines(song.lyrics, song.lyrics_aligner)
+        subs = lyrics.to_srt(lines, out)
         print(f"{out}  {len(subs)} lines")
+        trans = songmod.load_translation(song, len(lines))
+        if trans is not None:
+            out = song.work(f"{song.slug}.ja.srt")
+            subs = lyrics.to_srt([(tr or text, *rest) for tr, (text, *rest) in zip(trans, lines)], out)
+            print(f"{out}  {len(subs)} lines（訳）")
+    elif args.cmd == "align" and song.lyrics_aligner == "suno":
+        subs = suno_align.words_to_ass(suno_align.load_words(args.suno or song.work("suno_alignment.json")))
+        subs.save(song.lyrics)
+        print(f"{song.lyrics}  {len(subs)} lines（Suno の語の時刻のまま）")
     elif args.cmd == "align":
         whisper = args.whisper or song.work("lyrics.whisper.ass")
         suno = args.suno or song.work("suno_alignment.json")
