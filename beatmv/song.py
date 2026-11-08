@@ -107,7 +107,11 @@ def load_translation(song, n_lines):
     if not song.translation:
         return None
     with open(song.translation, encoding="utf-8") as f:
-        rows = [r.strip() for r in f.read().rstrip("\n").split("\n")]
+        rows = f.read().split("\n")
+    # 最後の改行だけを外す。末尾の空行（英語の行など、訳を出さない行）は 1 行として数える
+    if rows and rows[-1] == "":
+        rows.pop()
+    rows = [r.strip() for r in rows]
     if len(rows) != n_lines:
         raise ValueError(f"{song.translation}: 訳が {len(rows)} 行、字幕が {n_lines} 行です。1 行ずつ対応させてください")
     return rows

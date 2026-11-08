@@ -409,6 +409,11 @@ def test_translation_needs_one_row_per_line(tmp_path):
         songmod.load_translation(s, 2)
 
 
+def test_trailing_blank_rows_still_count(tmp_path):
+    s = write_translation_song(tmp_path, ["Charge ahead", "", ""])
+    assert songmod.load_translation(s, 3) == ["Charge ahead", "", ""], "最後の行が英語の曲でも行数がずれない"
+
+
 def test_translation_is_off_unless_asked(tmp_path):
     s = songmod.load(write_song(tmp_path))
     assert s.translation == "" and songmod.load_translation(s, 5) is None

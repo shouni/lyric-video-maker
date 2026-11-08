@@ -41,6 +41,9 @@ HOOK_FADE = 0.5    # フックの行の前後で、波形の色を hook_color �
 TRANS_FONT = 58    # 訳の文字の大きさ。歌詞（84）の 7 割。46 では動画で小さいと言われた（Only the Pulse）
 TRANS_GAP = 30     # 歌詞の下端から訳までの空き
 FONT_TRANS = "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc"  # W3 は輪郭を付けると細い線が潰れる
+GHOST_STAR_R = 11  # ゴーストノートの星の半径。8 では見えず、14 では強いスネアの四角（半径 7〜9）より目立った
+TL_SCALE = 1.3     # タイムライン（打点・ラベル・段の間隔）の倍率。1.0 ではスマホの大きさで KICK・SNARE が読めなかった
+SEC_FONT = 36      # 見出しのセクション名の文字の大きさ。26 ではスマホで読めなかった
 TL_SPAN = 2.5      # タイムラインで再生位置から左右に見せる秒数
 
 
@@ -84,10 +87,10 @@ class Ctx:
 
         self.bg = self._background()
         self.f_title = ImageFont.truetype(FONT_BOLD, px(52))
-        self.f_sec = ImageFont.truetype(FONT_LIGHT, px(26))
+        self.f_sec = ImageFont.truetype(FONT_LIGHT, px(SEC_FONT))
         self.f_next = ImageFont.truetype(FONT_LIGHT, px(40))
         self.f_trans = ImageFont.truetype(FONT_TRANS, px(TRANS_FONT))
-        self.f_tl = ImageFont.truetype(FONT_LIGHT, px(22))
+        self.f_tl = ImageFont.truetype(FONT_LIGHT, px(22 * TL_SCALE))
         self.f_big = ImageFont.truetype(FONT_BOLD, px(110))
         self.f_credit = ImageFont.truetype(FONT_LIGHT, px(30))
         self.line_cache = {}
@@ -261,42 +264,56 @@ def draw_bass(d, t):
     d.line([(cx - half, y), (cx + half, y)], fill=C.pal.accent + (int(60 + 150 * v),), width=px(4))
 
 
+def draw_ghost_star(d, x, y, passed, edge):
+    """ゴーストノート: 4 方向に尖った小さな星。強いスネア（白い四角）と形と色で見分けられるよう、
+    配色の accent（水色）で描く。通過前は輪郭だけ薄く、通過後は塗る（光らせたり点滅させたりはしない）。"""
+    px = C.px
+    ro = px(GHOST_STAR_R * TL_SCALE)
+    ri = ro * 0.32
+    pts = []
+    for k in range(8):
+        a = math.pi / 4 * k - math.pi / 2
+        r = ro if k % 2 == 0 else ri
+        pts.append((x + r * math.cos(a), y + r * math.sin(a)))
+    if passed:
+        d.polygon(pts, fill=C.pal.accent + (int(220 * edge),))
+    else:
+        d.polygon(pts, outline=C.pal.accent + (int(120 * edge),), width=px(1))
+
+
 def draw_timeline(d, t):
     """検出した打点を 2 段で流す。再生位置の縦線を通過した打点だけ塗る。"""
     px = C.px
     px_per_s = (C.TL_X1 - C.PLAYHEAD_X) / TL_SPAN
     f = C.f_tl
-    rows = [("KICK", C.kick, C.TL_Y, C.pal.accent), (C.song.perc_label, C.perc, C.TL_Y + px(44), WHITE)]
+    k = TL_SCALE
+    rows = [("KICK", C.kick, C.TL_Y, C.pal.accent), (C.song.perc_label, C.perc, C.TL_Y + px(44 * k), WHITE)]
 
     for b in C.down:  # 小節頭の目盛り
         if abs(b - t) <= TL_SPAN:
             x = C.PLAYHEAD_X + (b - t) * px_per_s
-            d.line([(x, C.TL_Y - px(22)), (x, C.TL_Y + px(66))], fill=C.pal.accent + (45,), width=px(2))
+            d.line([(x, C.TL_Y - px(22 * k)), (x, C.TL_Y + px(66 * k))], fill=C.pal.accent + (45,), width=px(2))
     for label, hits, y, color in rows:
-        d.text((C.TL_X0 - px(24) - f.getlength(label), y - px(12)), label, font=f, fill=(255, 255, 255, 150))
+        d.text((C.TL_X0 - px(24) - f.getlength(label), y - px(12 * k)), label, font=f, fill=(255, 255, 255, 150))
         d.line([(C.TL_X0, y), (C.TL_X1, y)], fill=(255, 255, 255, 35), width=px(1))
-        if hits is C.perc:  # ゴーストノートは同じ段に小さく薄く（強いスネアより先に描いて下に敷く）
+        if hits is C.perc:  # ゴーストノートは同じ段に小さな星で（強いスネアより先に描いて下に敷く）
             for h in C.ghost[bisect.bisect_left(C.ghost, t - TL_SPAN):bisect.bisect_right(C.ghost, t + TL_SPAN)]:
                 x = C.PLAYHEAD_X + (h - t) * px_per_s
                 edge = min(1.0, (min(x - C.TL_X0, C.TL_X1 - x)) / px(80))
-                r = px(4)
-                if h <= t:
-                    d.rectangle([x - r, y - r, x + r, y + r], fill=color + (int(150 * edge),))
-                else:
-                    d.rectangle([x - r, y - r, x + r, y + r], outline=color + (int(110 * edge),), width=px(1))
+                draw_ghost_star(d, x, y, h <= t, edge)
         lo = bisect.bisect_left(hits, t - TL_SPAN)
         hi = bisect.bisect_right(hits, t + TL_SPAN)
         for h in hits[lo:hi]:
             x = C.PLAYHEAD_X + (h - t) * px_per_s
             edge = min(1.0, (min(x - C.TL_X0, C.TL_X1 - x)) / px(80))  # 両端で薄くする
             if h <= t:
-                r = px(9) if t - h < 0.12 else px(7)
+                r = px(9 * k) if t - h < 0.12 else px(7 * k)
                 d.rectangle([x - r, y - r, x + r, y + r], fill=color + (int(255 * edge),))
             else:
-                r = px(7)
+                r = px(7 * k)
                 d.rectangle([x - r, y - r, x + r, y + r], fill=color + (int(60 * edge),),
                             outline=color + (int(190 * edge),), width=px(2))
-    d.line([(C.PLAYHEAD_X, C.TL_Y - px(30)), (C.PLAYHEAD_X, C.TL_Y + px(74))], fill=C.pal.accent + (220,), width=px(3))
+    d.line([(C.PLAYHEAD_X, C.TL_Y - px(30 * k)), (C.PLAYHEAD_X, C.TL_Y + px(74 * k))], fill=C.pal.accent + (220,), width=px(3))
 
 
 def draw_header(d, t):
@@ -386,6 +403,11 @@ def draw_translation(base, i, lyric_bottom, appear):
         return
     px = C.px
     f = C.f_trans
+    # 英訳は日本語の歌詞より長くなりやすいので、画面幅に収まるまで縮める（最小 TRANS_FONT の 7 割）
+    size = px(TRANS_FONT)
+    while f.getlength(text) > C.W - px(200) and size > px(TRANS_FONT * 0.7):
+        size -= px(2)
+        f = ImageFont.truetype(FONT_TRANS, size)
     l, t, r, b = f.getbbox(text, stroke_width=px(4))
     im = Image.new("RGBA", (r - l + px(8), b - t + px(8)), (0, 0, 0, 0))
     ImageDraw.Draw(im).text((px(4) - l, px(4) - t), text, font=f, fill=C.pal.unsung,
