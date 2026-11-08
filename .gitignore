@@ -107,7 +107,7 @@ frames_tmp*/
 *.zip
 *.ass
 
-# beatmv: 曲ごとの設定（songs/）と作業ディレクトリ（work/）は、非公開の lyric-video-works へのシンボリックリンク。
+# beatmv: 曲ごとの設定（songs/）と作業ディレクトリ（work/）は、手元の別の場所へのシンボリックリンク。
 # 末尾に / を付けるとリンク（ディレクトリではない）に当たらないので付けない
 /songs
 /work
