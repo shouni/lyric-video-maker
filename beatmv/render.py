@@ -32,6 +32,35 @@ FPS = 30
 FONT_BOLD = "/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc"
 FONT_LIGHT = "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"
 
+# 日本語を含まない行（英語の歌詞・フック・英訳・曲名・ラベル）を描く英字の書体。ヒラギノの英字は字幅が広く、
+# 海外の人には「日本製の英字」に見えるので、英字専用の書体に替える。Helvetica Neue を既定にした（SF Pro は
+# 英訳の行が日本語の行と詰まって見えた）。BEATMV_EN_FONT=hiragino で従来どおり。
+EN_FONT = os.environ.get("BEATMV_EN_FONT", "helvetica")
+_EN = {
+    # 3 つ目は大きさの倍率。英字専用の書体は同じポイント数だとヒラギノの英字より 15〜20 % 小さく見えるので、
+    # 行の幅がヒラギノのときとそろうように持ち上げる（Overclock the heart の幅で合わせた）
+    "helvetica": ("/System/Library/Fonts/HelveticaNeue.ttc", {"bold": 1, "semibold": 10, "light": 7}, 1.18),
+    "sf": ("/System/Library/Fonts/SFNS.ttf", {"bold": "Bold", "semibold": "Semibold", "light": "Regular"}, 1.25),
+}
+_JP_WEIGHT = {"bold": "/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc",
+              "semibold": "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
+              "light": "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"}
+
+
+def font_for(text, weight, size):
+    """text を描く書体。日本語を含む行はヒラギノ、英字だけの行は EN_FONT の英字書体。"""
+    size = int(round(size))
+    if EN_FONT not in _EN or lyr.has_japanese(text):
+        return ImageFont.truetype(_JP_WEIGHT[weight], size)
+    path, faces, scale = _EN[EN_FONT]
+    size = int(round(size * scale))
+    face = faces[weight]
+    if isinstance(face, int):
+        return ImageFont.truetype(path, size, index=face)
+    f = ImageFont.truetype(path, size)
+    f.set_variation_by_name(face)
+    return f
+
 WHITE = (255, 255, 255)  # 見出しのセクション名・ラベル・打楽器の縦線・次の行（配色に関わらず白）
 
 LINE_LINGER = 1.5  # 歌い終わりから行を残す最大秒数
@@ -86,13 +115,12 @@ class Ctx:
         self.BASS_Y = px(605)
 
         self.bg = self._background()
-        self.f_title = ImageFont.truetype(FONT_BOLD, px(52))
-        self.f_sec = ImageFont.truetype(FONT_LIGHT, px(SEC_FONT))
+        self.f_title = font_for(song.title, "bold", px(52))
+        self.f_sec = font_for("CHORUS", "light", px(SEC_FONT))  # セクション名は英字
         self.f_next = ImageFont.truetype(FONT_LIGHT, px(40))
-        self.f_trans = ImageFont.truetype(FONT_TRANS, px(TRANS_FONT))
-        self.f_tl = ImageFont.truetype(FONT_LIGHT, px(22 * TL_SCALE))
-        self.f_big = ImageFont.truetype(FONT_BOLD, px(110))
-        self.f_credit = ImageFont.truetype(FONT_LIGHT, px(30))
+        self.f_tl = font_for("KICK", "light", px(22 * TL_SCALE))
+        self.f_big = font_for(song.title, "bold", px(110))
+        self.f_credit = font_for(song.credit, "light", px(30))
         self.line_cache = {}
         rnd = random.Random(7)
         self.dots = [(rnd.uniform(0, self.W), rnd.uniform(0, self.H), rnd.uniform(0.3, 1.0),
@@ -174,7 +202,7 @@ def line_images(i):
     hook = lyr.is_hook_line(text)
     size = px(HOOK_FONT if hook else LYRIC_FONT)
     while True:
-        font = ImageFont.truetype(FONT_BOLD, size)
+        font = font_for(text, "bold", size)
         l, t, r, b = font.getbbox(text, stroke_width=px(6))
         if r - l <= C.W - px(200) or size <= px(48):
             break
@@ -402,12 +430,12 @@ def draw_translation(base, i, lyric_bottom, appear):
     if not text:
         return
     px = C.px
-    f = C.f_trans
+    f = font_for(text, "semibold", px(TRANS_FONT))
     # 英訳は日本語の歌詞より長くなりやすいので、画面幅に収まるまで縮める（最小 TRANS_FONT の 7 割）
     size = px(TRANS_FONT)
     while f.getlength(text) > C.W - px(200) and size > px(TRANS_FONT * 0.7):
         size -= px(2)
-        f = ImageFont.truetype(FONT_TRANS, size)
+        f = font_for(text, "semibold", size)
     l, t, r, b = f.getbbox(text, stroke_width=px(4))
     im = Image.new("RGBA", (r - l + px(8), b - t + px(8)), (0, 0, 0, 0))
     ImageDraw.Draw(im).text((px(4) - l, px(4) - t), text, font=f, fill=C.pal.unsung,

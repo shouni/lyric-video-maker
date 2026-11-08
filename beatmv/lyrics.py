@@ -50,6 +50,11 @@ _JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff々〆ヶ]")
 _LATIN = re.compile(r"[A-Za-z]")
 
 
+def has_japanese(text):
+    """かな・漢字を含むか（英字だけの行かどうかの判定に使う）。"""
+    return bool(_JAPANESE.search(text))
+
+
 def is_hook_line(text):
     """日本語を含まず、英字があり、4 語以内の行をフックの行とみなす。"""
     return (not _JAPANESE.search(text) and bool(_LATIN.search(text))
