@@ -37,6 +37,8 @@ START_WARN = 2.0
 GAP_TOKEN = 0.15
 
 _TAG = re.compile(r"\[[^\]]*\]")
+# 語の頭に付いた、前の語の句読点（words_to_ass で前の語へ戻す）
+_LEADING_PUNCT = re.compile(r"[!?,.;:]+")
 
 
 def load_words(path):
@@ -148,6 +150,16 @@ def words_to_ass(words):
         segs = [s for s in segs if s[0]]
         if not segs:
             continue
+        # Suno は語の後ろの句読点を次の語の頭に付けて返す（`! Still`、`, cold`）。そのままだと句読点が
+        # 次の語と一緒に塗られ、New Morning では "standing" のあと「!」だけが 10 秒白く残った。
+        # 前の語の後ろへ付け直す
+        for i in range(1, len(segs)):
+            m = _LEADING_PUNCT.match(segs[i][0])
+            if m:
+                tok, a, b = segs[i - 1]
+                segs[i - 1] = (tok + m.group(0), a, b)
+                segs[i] = (segs[i][0][m.end():], segs[i][1], segs[i][2])
+        segs = [s for s in segs if s[0]]
         segs[0] = (segs[0][0].lstrip(), segs[0][1], segs[0][2])
         segs[-1] = (segs[-1][0].rstrip(), segs[-1][1], segs[-1][2])
         # 語の間の空き（前の語の終わり〜次の語の歌い出し）が GAP_TOKEN 秒を超えたら、文字のない \\k を
