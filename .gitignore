@@ -1,8 +1,8 @@
 # ------------------------------------
-# 1. 仮想環境とパッケージ管理
+# 1. Virtual environments and package management
 # ------------------------------------
 
-# 仮想環境ディレクトリ (よく使われる名前)
+# virtual environment directories (common names)
 .venv
 venv
 env
@@ -13,54 +13,54 @@ env
 /lib/
 /lib64/
 
-# pip のキャッシュとログファイル
+# pip cache and log files
 pip-log.txt
 .pip_log
 
-# Python パッケージ管理ファイル
-poetry.lock  # Poetryを使う場合、この行は削除してコミットすべきです
+# Python package manager files
+poetry.lock  # remove this line and commit it if you use Poetry
 
-# Pipenv ファイル (ロックファイルは通常コミットすべき)
+# Pipenv files (lock files are usually committed)
 Pipfile.lock
 
-# Conda 環境ディレクトリ
+# Conda environment directory
 .conda
 
 # ------------------------------------
-# 2. バイトコードと一時ファイル
+# 2. Bytecode and temporary files
 # ------------------------------------
 
-# Python バイトコードファイル
+# Python bytecode
 *.pyc
 __pycache__/
 *.pyd
 *.whl
 
-# C/C++ 拡張モジュールの一時ファイル
+# C/C++ extension build leftovers
 *.so
 *.o
 *.dll
 
-# dist/build/egg/ など (パッケージング関連)
+# dist/build/egg/ etc. (packaging)
 dist/
 build/
 *.egg-info/
 .eggs/
 
 # ------------------------------------
-# 3. テストとドキュメント
+# 3. Tests and docs
 # ------------------------------------
 
-# テストカバレッジ・キャッシュ
+# test coverage and caches
 .coverage
 .tox/
 .pytest_cache/
 
-# Sphinx ドキュメントのビルドファイル
+# Sphinx build output
 /docs/_build/
 
 # ------------------------------------
-# 4. OS/エディタのファイル
+# 4. OS / editor files
 # ------------------------------------
 
 # macOS
@@ -69,21 +69,21 @@ build/
 # Vim
 *~
 
-# VS Code の設定
+# VS Code settings
 .vscode/
 
-# JetBrains IDEs (PyCharm, IntelliJ IDEAなど)
+# JetBrains IDEs (PyCharm, IntelliJ IDEA, ...)
 .idea/
 
-# データベースファイル
+# database files
 *.sqlite3
 db.sqlite3
 
-# ログファイル
+# log files
 *.log
 /logs/
 
-# 環境変数やシークレット情報
+# environment variables and secrets
 .env
 .flaskenv
 
@@ -91,14 +91,14 @@ db.sqlite3
 /var/tmp/
 *.iml
 
-# 入出力ファイル（バイナリ・生成物）
+# input / output files (binaries, generated)
 /input/*
 !/input/.gitkeep
 /output/*
 !/output/.gitkeep
 frames_tmp*/
 
-# 音源・動画・字幕生成物
+# audio, video and generated subtitles
 *.mp3
 *.wav
 *.m4a
@@ -107,9 +107,9 @@ frames_tmp*/
 *.zip
 *.ass
 
-# beatmv: 曲ごとの設定（songs/）と作業ディレクトリ（work/）は、手元の別の場所へのシンボリックリンク。
-# 末尾に / を付けるとリンク（ディレクトリではない）に当たらないので付けない
+# beatmv: per-song settings (songs/) and the work directory (work/) are symlinks to another local location.
+# No trailing / : with it, the pattern would not match a link (it is not a directory)
 /songs
 /work
-# テスト用の架空の曲の字幕（*.ass は上で無視しているので戻す）
+# subtitles of the made-up test song (*.ass is ignored above, so bring it back)
 !/tests/fixtures/**/*.ass

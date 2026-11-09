@@ -1,14 +1,15 @@
-"""\\k 付き ASS の歌詞を、文字（トークン）単位の時刻に分ける。描画と SRT が同じ時刻を使う。
+"""Split ASS lyrics with \\k into per-character (token) timings. Rendering and SRT use the same timings.
 
-ASS の出どころは 2 通り（song.toml の lyrics_aligner）:
-- suno: Suno の時刻合わせ（audio-lyrics-alignment）から作ったもの。行の開始は歌い出しそのもの。
-- whisper: align_subtitles.py で分離ボーカルに歌詞を合わせたもの。カナで歌わせた曲は Suno の時刻合わせも
-  カナで返るので、漢字の字幕にはこちらを使う。align_subtitles.py は行の開始を前の行の終わりまで
-  繰り上げ、その分を最初の文字の \\k に入れる（「駆」が \\k156 など）。そのまま塗ると歌う前から色が
-  付くので、最初の文字が FIRST_SEG_MAX より長いときは終わりの FIRST_SEG_WIPE 秒前から塗る。
-  駆け抜けろ Midnight では、Suno の時刻合わせの歌い出しより 0.16〜0.29 秒早い範囲に収まった。
-- hybrid: `python -m beatmv align` が、行の範囲を Suno、行の中の配分を Whisper から取って作ったもの
-  （beatmv/suno_align.py）。最初の文字はそこで詰めてあるので、whisper のような手当てはしない。
+The ASS comes from one of three places (lyrics_aligner in song.toml):
+- suno: built from Suno's lyric alignment (audio-lyrics-alignment). A line starts exactly where it is sung.
+- whisper: lyrics aligned to the separated vocal with align_subtitles.py. For songs sung from kana, Suno's
+  alignment also comes back in kana, so this is what gives kanji subtitles. align_subtitles.py pulls each
+  line's start back to the end of the previous line and puts that time into the first character's \\k
+  (e.g. \\k156). Filling it as is would colour the character before it is sung, so when the first
+  character is longer than FIRST_SEG_MAX, filling starts FIRST_SEG_WIPE seconds before its end.
+  On 駆け抜けろ Midnight that landed 0.16–0.29 s ahead of where Suno's alignment says the line is sung.
+- hybrid: built by `python -m beatmv align` with the line span from Suno and the timing inside the line
+  from Whisper (beatmv/suno_align.py). The first character is already trimmed there, so no fix is applied.
 """
 import bisect
 import math
@@ -23,12 +24,12 @@ FIRST_SEG_WIPE = 0.35
 
 
 def load_lines(ass_path, aligner):
-    """各行を (表示テキスト, 行の開始, 行の終わり, [(トークン, 開始秒, 終了秒), ...]) にする。"""
+    """Return each line as (display text, line start, line end, [(token, start s, end s), ...])."""
     return load_lines_from(pysubs2.load(ass_path), aligner)
 
 
 def load_lines_from(subs, aligner):
-    """読み込み済みの SSAFile から load_lines と同じ形を作る。"""
+    """Same shape as load_lines, from an already loaded SSAFile."""
     out = []
     for e in subs:
         t0 = e.start / 1000
@@ -43,26 +44,27 @@ def load_lines_from(subs, aligner):
     return out
 
 
-# フックの行: 日本語を含まない、4 語以内の英語の行（`Override! Override!`、`Overclock the heart`）。
-# Suno 向けのプロンプトでサビの頭をこの形の叫びにしているので、歌詞の中から見分けられる。
+# Hook lines: English lines of up to four words with no Japanese (`Override! Override!`, `Overclock the heart`).
+# The Suno prompts open each chorus with a shout of this shape, so it can be picked out of the lyrics.
 HOOK_MAX_WORDS = 4
 _JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff々〆ヶ]")
 _LATIN = re.compile(r"[A-Za-z]")
 
 
 def has_japanese(text):
-    """かな・漢字を含むか（英字だけの行かどうかの判定に使う）。"""
+    """Whether the text contains kana or kanji (used to tell Latin-only lines apart)."""
     return bool(_JAPANESE.search(text))
 
 
 def is_hook_line(text):
-    """日本語を含まず、英字があり、4 語以内の行をフックの行とみなす。"""
+    """A line with no Japanese, some Latin letters and at most four words is a hook line."""
     return (not _JAPANESE.search(text) and bool(_LATIN.search(text))
             and len(text.split()) <= HOOK_MAX_WORDS)
 
 
 def current_line(lines, t, linger):
-    """表示中の行番号。次の行が近ければその直前まで、遠ければ歌い終わりから linger 秒まで。"""
+    """Index of the line on screen. It stays until just before the next line if that is close,
+    otherwise until `linger` seconds after it is sung."""
     cur = None
     for i, (_, s, e, _) in enumerate(lines):
         nxt = lines[i + 1][1] if i + 1 < len(lines) else math.inf
@@ -73,7 +75,7 @@ def current_line(lines, t, linger):
 
 
 def progress(segs, t):
-    """塗り終わったトークン数（小数）。各トークンはその \\k の長さをかけて塗る。"""
+    """Number of tokens filled so far (fractional). Each token fills over the length of its \\k."""
     k = bisect.bisect_right([a for _, a, _ in segs], t) - 1
     if k < 0:
         return 0.0
@@ -82,7 +84,7 @@ def progress(segs, t):
 
 
 def to_srt(lines, out_path):
-    """YouTube 字幕用の SRT。行は最初の文字の歌い出しから、次の行の歌い出しまで出す。"""
+    """SRT for YouTube. Each line runs from its first sung character to the next line's first."""
     subs = pysubs2.SSAFile()
     for i, (text, _, end, segs) in enumerate(lines):
         start = segs[0][1]

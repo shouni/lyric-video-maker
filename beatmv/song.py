@@ -1,10 +1,11 @@
-"""songs/<slug>/song.toml を読む。
+"""Read songs/<slug>/song.toml.
 
-曲ごとに違うのは、曲名・音源・字幕・拍・セクションの時刻・ドラムの振り分け方だけで、描画のコードは
-共有する。時刻はレシピではなく、できた音から取ったもの（Suno はレシピの秒数を守らない）を書く。
+Only the title, audio, lyrics, beats, section times and drum rule differ per song; the drawing code is
+shared. Write times taken from the finished audio, not from the recipe (Suno does not keep the recipe's
+lengths).
 
-パスの解決: song_dir 内のファイル（lyrics / beats）は song_dir 基準、音源と作業ディレクトリは
-リポジトリ基準（~ と絶対パスも可）。音源と生成物はリポジトリに入れない。
+Paths: files inside song_dir (lyrics / beats) are relative to song_dir; the audio and the work directory
+are relative to the repository (~ and absolute paths also work). Audio and outputs stay out of the repo.
 """
 import os
 import tomllib
@@ -33,14 +34,15 @@ class Song:
     sections: List[Tuple[float, str]]
     choruses: List[Tuple[float, float]]
     instrumental: List[Tuple[float, float]]
-    style: str = "karaoke_blue"  # styles/<name>.json（配色。burn_subs と共有）
+    style: str = "karaoke_blue"  # styles/<name>.json (colours, shared with burn_subs)
     credit: str = "Made with Suno"
     fade_in: float = 0.5
     fade_out: float = 2.5
     thumbnail_window: Tuple[float, float] = (0.0, 0.0)
-    bass_band: bool = False  # 波形の下にベースの音量の帯を出す（Demucs の 4 分割が要る）
-    wave: str = "mix"  # 波形の振れ幅の元。mix＝ドラム以外の音、vocals＝声だけ（Demucs の 4 分割が要る）
-    # 歌詞の訳（song_dir 内のテキスト、字幕 1 行につき 1 行）。あれば各行の下に訳を出し、次の行の予告は出さない
+    bass_band: bool = False  # show a bass loudness band under the waveform (needs the Demucs 4-stem split)
+    wave: str = "mix"  # waveform source: mix = everything but drums, vocals = voice only (needs the 4-stem split)
+    # translation (a text file in song_dir, one line per subtitle line). When set, it is shown under each line
+    # and the next-line preview is hidden
     translation: str = ""
 
     def work(self, *parts):
@@ -100,18 +102,19 @@ def load(song_dir):
 
 
 def load_translation(song, n_lines):
-    """訳を字幕の行数ぶん読む。行数が違えば中断する（1 行ずれると、全部の行に別の行の訳が付く）。
+    """Read one translation row per subtitle line. Stop if the counts differ (a one-row offset would give
+    every line another line's translation).
 
-    空の行は「この行は訳を出さない」（`Only the pulse` のような繰り返しの断片など）。
+    An empty row means "no translation for this line" (e.g. a repeated fragment such as `Only the pulse`).
     """
     if not song.translation:
         return None
     with open(song.translation, encoding="utf-8") as f:
         rows = f.read().split("\n")
-    # 最後の改行だけを外す。末尾の空行（英語の行など、訳を出さない行）は 1 行として数える
+    # Drop only the final newline. Trailing empty rows (lines with no translation, such as English ones) still count
     if rows and rows[-1] == "":
         rows.pop()
     rows = [r.strip() for r in rows]
     if len(rows) != n_lines:
-        raise ValueError(f"{song.translation}: 訳が {len(rows)} 行、字幕が {n_lines} 行です。1 行ずつ対応させてください")
+        raise ValueError(f"{song.translation}: {len(rows)} translation rows for {n_lines} subtitle lines. Give exactly one row per line")
     return rows

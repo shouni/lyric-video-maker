@@ -1,26 +1,29 @@
-"""ドラム stem からキックと打楽器の打点を検出し、波形用の音量も書き出す。
+"""Detect kick and percussion hits in the drum stem, and write loudness for the waveform.
 
-Demucs でドラムとそれ以外に分け、ドラム全体のオンセットを取ってから、打点ごとに「低域（40-120Hz）」と
-「スネア帯（1-4kHz + 胴鳴り 150-250Hz）」の立ち上がりを比べて振り分ける。帯域ごとに別々にピークを
-拾うと、スネア帯がキックのアタックも拾って両者がほぼ同じ打点列になった（境界の調律者で 540 / 558 回）。
+Demucs splits drums from the rest. Onsets are taken from the whole drum stem first, then each hit is
+assigned by comparing the rise in the low band (40–120 Hz) with the rise in the snare band
+(1–4 kHz plus the 150–250 Hz body). Picking peaks per band separately made the snare band pick up the
+kick's attack too, so both rows came out almost identical (540 / 558 hits on 境界の調律者).
 
-振り分けの基準は曲のドラムで変わる（song.toml の drum_rule）:
-- rock: 低域が中高域より立てばキック、スネア帯が低域の 0.6 倍を超えればスネア。境界の調律者のサビ1で
-  キックが 1・3 拍、スネアが 2・4 拍に分かれた。
-- edm: 四つ打ちのキックはアタックが 1-4kHz にも強く出る（立ち上がりの中央値 3.1〜3.5）ので、rock の基準
-  ではキックが 84 回しか残らなかった（駆け抜けろ Midnight）。低域が立てばキックとし、中高域が低域を
-  1.2 以上上回った打点を打楽器（クラップ・ハット・刻み）とする。スネアだけではないので表示は PERC。
-- trance: edm と同じ基準で、キックになった打点は打楽器に数えない。edm ではキックのアタックが中高域の条件も
-  満たし、夜明けの境界線で打楽器 258 回のうち 131 回がキックと同じ打点だった（1〜4 拍に均等なので
-  2・4 拍のクラップではない。駆け抜けろ Midnight も 48%）。裏打ちのハットだけが打楽器に残り、
-  表拍のリングと裏拍の縦線が交互に光る。キックと同時のクラップも落ちるので、それが鳴る曲は edm のまま。
-- dnb: キックは rock と同じ。スネアは rock の条件から、キックになった打点を外し、残りのうちスネア帯の
-  立ち上がりが弱い下位 DNB_GHOST_QUANTILE を落とす。DnB のキックはアタックが強く、rock では 1 拍目の
-  キックが 1 曲あたり 43〜89 回スネアにも出た。ブレイクビーツのゴーストノートとハットも拾い、スネアが
-  1 小節に 2.5〜3.4 回光った（Digital Armor Style の 6 曲、2026-11-03）。dnb では 1.3〜1.8 回になり、
-  2・4 拍に乗る割合が 6 曲中 5 曲で上がった（Overclock は 57% → 61%、Armor Reboot は 51% → 67%）。
-  Half-Time の曲は 3 拍目にスネアが来るので、2・4 拍の割合は上がらない（Signal Lost 36% → 45%）。
-  落とした弱い打点は drums.json の ghost に残し、スネアの段に小さく薄い印で出す（画面中央の縦線は光らせない）。
+The rule depends on the song's drums (drum_rule in song.toml):
+- rock: a kick when the low band rises more than the mids, a snare when the snare band exceeds 0.6× the
+  low band. On 境界の調律者's first chorus this split kicks onto beats 1 and 3 and snares onto 2 and 4.
+- edm: a four-on-the-floor kick's attack is strong in 1–4 kHz too (median rise 3.1–3.5), so the rock rule
+  kept only 84 kicks (駆け抜けろ Midnight). A rising low band makes a kick; hits where the mids exceed the
+  low band by more than 1.2 are percussion (claps, hats, ticks). Not only snares, so it is labelled PERC.
+- trance: the edm rule, but hits that became kicks are not counted as percussion. With edm the kick's
+  attack also meets the mid condition: on 夜明けの境界線, 131 of 258 percussion hits sat on a kick (spread
+  evenly over beats 1–4, so not claps on 2 and 4; 駆け抜けろ Midnight had 48 %). Only the off-beat hats
+  remain, so the ring (on-beat) and the vertical lines (off-beat) alternate. Claps on the kick are lost too,
+  so songs that have them stay on edm.
+- dnb: kicks as in rock. Snares use the rock condition minus the hits that became kicks, then drop the
+  weakest DNB_GHOST_QUANTILE of the snare-band rises. DnB kicks have a hard attack, and with rock the
+  downbeat kick also showed as a snare 43–89 times per song. Breakbeat ghost notes and hats were picked up
+  too, so the snare lit 2.5–3.4 times per bar (six Digital Armor Style songs, 2026-11-03). With dnb it is
+  1.3–1.8, and the share on beats 2 and 4 rose in 5 of 6 songs (Overclock 57 % → 61 %, Armor Reboot
+  51 % → 67 %). Half-time songs put the snare on beat 3, so their share does not rise (Signal Lost
+  36 % → 45 %). The dropped weak hits are kept as `ghost` in drums.json and drawn small on the snare row
+  (they do not light the centre line).
 """
 import json
 import os
@@ -31,14 +34,14 @@ import numpy as np
 
 SR = 44100
 HOP = 256
-RISE_THRESHOLD = 1.0  # 前後 3 フレームでの log 振幅の上昇
+RISE_THRESHOLD = 1.0  # rise in log magnitude across ±3 frames
 ROCK_SNARE_VS_LOW = 0.6
 EDM_PERC_OVER_LOW = 1.2
-DNB_GHOST_QUANTILE = 0.4  # dnb でスネア候補から落とす、立ち上がりの弱い側の割合
+DNB_GHOST_QUANTILE = 0.4  # share of the weakest snare candidates that dnb drops
 
 
 def classify(t, lr, mr, rule):
-    """オンセット時刻 t と、低域 lr / スネア帯 mr の立ち上がりから (kick, perc) の時刻を返す。"""
+    """Return (kick, perc) times from onset times t and the rises of the low band lr / snare band mr."""
     t, lr, mr = np.asarray(t), np.asarray(lr), np.asarray(mr)
     if rule == "rock":
         kick = t[(lr > RISE_THRESHOLD) & (lr > mr)]
@@ -57,10 +60,10 @@ def classify(t, lr, mr, rule):
 
 
 def dnb_split(t, lr, mr):
-    """dnb の (kick, snare, ghost)。ghost はスネア候補のうち立ち上がりの弱い側（ゴーストノート・ハット）。
+    """(kick, snare, ghost) for dnb. ghost is the weak side of the snare candidates (ghost notes, hats).
 
-    ghost を捨てると「鳴っているのに表示されない」打点になった（2026-11-03 のユーザーの指摘）ので、
-    スネアの段に小さく薄い印で出せるよう、落とした分も返す。
+    Throwing ghost away left hits that "play but do not show" (pointed out on 2026-11-03), so the dropped
+    hits are returned too, to be drawn small on the snare row.
     """
     t, lr, mr = np.asarray(t), np.asarray(lr), np.asarray(mr)
     is_kick = (lr > RISE_THRESHOLD) & (lr > mr)
@@ -77,15 +80,15 @@ def stem_dir(song):
 
 
 def separate(song):
-    """drums.wav / no_drums.wav を作る。分離済みなら何もしない。
+    """Create drums.wav / no_drums.wav. Does nothing if already separated.
 
-    Demucs は既定で入力をランダムにずらして推論する（--shifts 1）ので、作り直すと打点の検出結果も変わる。
+    Demucs randomly shifts its input by default (--shifts 1), so separating again also changes the detected hits.
     """
     drums = os.path.join(stem_dir(song), "drums.wav")
     if not os.path.exists(drums):
         import torch
 
-        # Demucs の既定は cuda か cpu で、Apple Silicon の GPU（mps）は指定しないと使われない
+        # Demucs defaults to cuda or cpu; the Apple Silicon GPU (mps) is only used when asked for
         device = "mps" if torch.backends.mps.is_available() else "cpu"
         subprocess.run(
             [sys.executable, "-m", "demucs", "-n", "htdemucs", "--two-stems", "drums",
@@ -96,7 +99,7 @@ def separate(song):
 
 
 def separate4(song, stem):
-    """Demucs の 4 分割（drums / bass / other / vocals）の stem を返す。分離済みなら何もしない。"""
+    """Return a stem of the Demucs 4-stem split (drums / bass / other / vocals). Does nothing if already separated."""
     path = song.work("sep4", "htdemucs", os.path.splitext(os.path.basename(song.audio))[0], f"{stem}.wav")
     if not os.path.exists(path):
         import torch
@@ -110,31 +113,31 @@ def separate4(song, stem):
 
 
 def separate_bass(song):
-    """bass.wav を作る（Demucs の 4 分割）。分離済みなら何もしない。
+    """Create bass.wav (Demucs 4-stem split). Does nothing if already separated.
 
-    ベースは打点ではなく音量で描く。アクセルを踏み抜けで 1 音ずつ拾おうとしたところ、時刻は 8 分音符の
-    位置から 40 ms 以内に収まった（97%）が、裏打ちの音が続くと立ち上がりが立たず、鳴っている音の一部しか
-    取れなかった（20 秒で 54 回ほどのところ 10〜41 回）。音量なら取りこぼしが起きない。
+    Bass is drawn as loudness, not hits. Picking single notes on アクセルを踏み抜け put them within 40 ms of the
+    eighth-note grid (97 %), but a running off-beat line has weak attacks and only part of it was found
+    (10–41 of about 54 notes in 20 s). Loudness misses nothing.
     """
     return separate4(song, "bass")
 
 
 def write_bass_rms(song, fps=30):
-    """帯の長さに使う、ベースの RMS を 1 コマ 1 値で bass_rms.npy に書く。"""
+    """Write the bass RMS, one value per frame, to bass_rms.npy (it sets the band length)."""
     import librosa
 
     y, sr = librosa.load(separate_bass(song), sr=22050, mono=True)
     rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=sr // fps)[0]
-    rms = np.convolve(rms, np.ones(3) / 3, mode="same")  # 0.1 秒でならす（裏打ちの刻みは残す）
+    rms = np.convolve(rms, np.ones(3) / 3, mode="same")  # smooth over 0.1 s (keeps the off-beat pulse)
     np.save(song.work("bass_rms.npy"), np.clip(rms / np.percentile(rms, 98), 0, 1))
 
 
 def write_vocal_rms(song, fps=30):
-    """波形の振れ幅に使う、声だけの RMS を 1 コマ 1 値で vocal_rms.npy に書く（wave = "vocals"）。
+    """Write the vocal-only RMS, one value per frame, to vocal_rms.npy (wave = "vocals").
 
-    リング＝キック、縦線＝スネア、帯＝ベースと、ほかの要素は 1 つの音に結びついているのに、波形だけが
-    声と伴奏の混ざった音（no_drums）で動いていた。声だけにすると、歌っている間だけ大きく動き、間奏では
-    静まる。ならしは rms.npy と同じ 0.3 秒で、言葉ごとに跳ねないようにする。
+    Every other element is tied to one sound (ring = kick, lines = snare, band = bass), but the waveform moved
+    with voice and backing mixed (no_drums). With the voice only, it moves while singing and calms in the
+    interludes. Smoothed over 0.3 s like rms.npy so it does not jump on every word.
     """
     import librosa
 
@@ -166,12 +169,12 @@ def onset_rises(drums_wav):
 
 
 def write_rms(song, fps=30):
-    """波形の振れ幅に使う、ドラム以外（声と伴奏）の RMS を 1 コマ 1 値で rms.npy に書く。"""
+    """Write the RMS of everything but drums (voice and backing), one value per frame, to rms.npy."""
     import librosa
 
     y, sr = librosa.load(os.path.join(stem_dir(song), "no_drums.wav"), sr=22050, mono=True)
     rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=sr // fps)[0]
-    rms = np.convolve(rms, np.ones(9) / 9, mode="same")  # 0.3 秒でならす
+    rms = np.convolve(rms, np.ones(9) / 9, mode="same")  # smooth over 0.3 s
     np.save(song.work("rms.npy"), rms / np.percentile(rms, 98))
 
 
@@ -180,7 +183,7 @@ def analyze(song):
     drums = separate(song)
     t, lr, mr = onset_rises(drums)
     kick, perc = classify(t, lr, mr, song.drum_rule)
-    # キー名は互換のため snare のまま（edm では打楽器全般）
+    # the key stays "snare" for compatibility (general percussion under edm)
     out = {"kick": [round(float(x), 3) for x in kick],
            "snare": [round(float(x), 3) for x in perc]}
     if song.drum_rule == "dnb":

@@ -2,6 +2,6 @@ stable-ts
 pysubs2
 pillow
 silero-vad
-# beatmv: ドラム分離と打点検出
+# beatmv: drum separation and hit detection
 demucs==4.1.0
 librosa==0.11.0
