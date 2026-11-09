@@ -1,19 +1,18 @@
-"""beatmv の配色を styles/<name>.json から読む。burn_subs.py の --style-file と同じファイルを共有する。
+"""Read beatmv's colours from styles/<name>.json, the same files as burn_subs.py's --style-file.
 
-同じファイルを使うのは、スライドショーの MV（burn_subs）と音から描く MV（beatmv）の配色を揃えるため。
-beatmv が読むのは色だけで、font_size や outline の太さは使わない（beatmv は文字の大きさを自分の
-レイアウトで決めていて、スタイル側の値を入れると配置が崩れる）。
+Sharing the files keeps the slideshow videos (burn_subs) and the audio-drawn videos (beatmv) in one
+palette. beatmv reads colours only, never font_size or outline width (beatmv sizes text with its own
+layout, and the style's values would break it).
 
-| キー | burn_subs | beatmv |
-| primary_color | 歌唱済みの色 | 同じ |
-| secondary_color | 未歌唱の色 | 同じ |
-| outline_color | 縁取り | 縁取りと背景グラデーションの下の色 |
-| accent_color | （使わない） | リング・波形・点・グリッド・拍の四角・タイムライン・曲名。省略時は primary_color |
-| background_top | （使わない） | 背景グラデーションの上の色 |
-| hook_color | （使わない） | フックの行（lyrics.is_hook_line）の歌唱済みの色。省略時はシアン（カバーのアーティスト名と同じ） |
+| key | burn_subs | beatmv |
+| primary_color | sung colour | same |
+| secondary_color | unsung colour | same |
+| outline_color | outline | outline and the bottom of the background gradient |
+| accent_color | (unused) | ring, waveform, dots, grid, beat squares, timeline, title. Defaults to primary_color |
+| background_top | (unused) | top of the background gradient |
+| hook_color | (unused) | sung colour of hook lines (lyrics.is_hook_line). Defaults to cyan (as the artist name on covers) |
 
-burn_subs.load_style_file は知らないキーを黙って通すので、beatmv だけのキーを足しても burn_subs は
-変わらない。
+burn_subs.load_style_file passes unknown keys through silently, so beatmv-only keys do not change burn_subs.
 """
 import json
 import os
@@ -22,7 +21,7 @@ from dataclasses import dataclass
 from beatmv.song import REPO
 from burn_subs import HEX_COLOR_RE, hex_to_rgb
 
-# 既定は karaoke_blue と同じ（これまでの MV の配色）
+# Defaults match karaoke_blue (the palette of the videos so far)
 DEFAULTS = {
     "primary_color": "#8FE3FF",
     "secondary_color": "#FFFFFF",
@@ -44,7 +43,7 @@ class Palette:
 
 def _rgb(value, key, path):
     if not (isinstance(value, str) and HEX_COLOR_RE.fullmatch(value)):
-        raise ValueError(f"{path}: {key} は '#RRGGBB' 形式で指定してください（{value!r}）")
+        raise ValueError(f"{path}: {key} must be '#RRGGBB' ({value!r})")
     return hex_to_rgb(value)
 
 
@@ -53,12 +52,12 @@ def style_path(name):
 
 
 def load(name):
-    """styles/<name>.json の色を読む。動画の配色が黙って変わらないよう、不正な色は警告でなくエラーにする。"""
+    """Read the colours in styles/<name>.json. Invalid colours are errors, not warnings, so a video's palette never changes silently."""
     path = style_path(name)
     with open(path, encoding="utf-8") as f:
         d = json.load(f)
     if not isinstance(d, dict):
-        raise ValueError(f"{path}: JSON オブジェクトである必要があります")
+        raise ValueError(f"{path}: must be a JSON object")
     c = {**DEFAULTS, **{k: v for k, v in d.items() if k in DEFAULTS or k == "accent_color"}}
     c.setdefault("accent_color", c["primary_color"])
     return Palette(

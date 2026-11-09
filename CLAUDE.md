@@ -2,37 +2,43 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Conventions
+
+- **Write code comments, docstrings, CLI help, log and error messages in English.** This is a public repository and the people asking how it works read English. The whole codebase was moved to English on 2026-11-09; do not mix Japanese back in. Japanese stays only where it is data: lyrics in tests and fixtures, song titles quoted as evidence (e.g. 境界の調律者), and the Hiragino font paths.
+- **`README.md` is English and `README.ja.md` is its Japanese version.** When one changes, update the other in the same commit.
+- Keep the "why" in comments (the song or measurement a constant was tuned on). Translate it; never drop it.
+
 ## Commands
 
-Makefile は無い。フラットな Python スクリプト4本と、音から MV を描く `beatmv/` パッケージのリポジトリで、実行がそのまま動作確認になる。
-ffmpeg/Whisper を伴わない純粋ロジック（`tests/`）だけ pytest で押さえている。
+There is no Makefile. The repository is four flat Python scripts plus the `beatmv/` package, which draws a music video from the audio; running them is the end-to-end check.
+Only the pure logic that does not call ffmpeg/Whisper is covered by pytest (`tests/`).
 
 ```bash
 .venv/bin/python -m pytest tests -q
 ```
 
-依存は `.venv`（Python 3.14。beatmv が `tomllib` を使うので 3.11 以上が必要）にインストール済み。**必ず `.venv/bin/python` で実行する**こと。システム python3 には pysubs2 / stable-ts が無い。ffmpeg はシステムインストール（brew）。
+Dependencies are installed in `.venv` (Python 3.14; beatmv uses `tomllib`, so 3.11+ is required). **Always run with `.venv/bin/python`.** The system python3 has no pysubs2 / stable-ts. ffmpeg is a system install (brew).
 
 ```bash
-# ① 歌詞アライメント: 音声 + 歌詞 → カラオケタイミング付き ASS
+# ① lyric alignment: audio + lyrics → ASS with karaoke timing
 .venv/bin/python align_subtitles.py input/audio.mp3 input/keyframes.zip input/subtitles_aligned.ass
-# 歌詞入力は keyframes.zip / .ass / .txt（1行=1字幕行）のいずれでも可
+# lyrics may be keyframes.zip / .ass / .txt (one line = one subtitle line)
 
-# ② 字幕焼き込み: 音声 + keyframes.zip (+ ASS) → MP4
+# ② burn subtitles: audio + keyframes.zip (+ ASS) → MP4
 .venv/bin/python burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4 --subs input/subtitles_aligned.ass
 
-# ②' 完成済み動画に1行スタイル字幕を焼き込み（映像保持、line モード専用）
+# ②' burn one-line styled subtitles onto a finished video (picture kept, line mode only)
 .venv/bin/python burn_subs_video.py input/video.mp4 subtitles_aligned.ass out.mp4 --style-file styles/rock.json
 
-# ③ カバー画像: MP4 のフレーム → cover_youtube.png (1280x720) + cover_short.png (1080x1920)
-.venv/bin/python make_cover.py output/output.mp4 --title "曲名"        # 先頭フレーム
-.venv/bin/python make_cover.py output/output.mp4 --title "曲名" --at 8  # 8秒地点のフレーム
-.venv/bin/python make_cover.py output/output.mp4 --title "曲名" --artist-color 8FE3FF  # アーティスト名を水色に
+# ③ cover images: an MP4 frame → cover_youtube.png (1280x720) + cover_short.png (1080x1920)
+.venv/bin/python make_cover.py output/output.mp4 --title "Song Title"        # first frame
+.venv/bin/python make_cover.py output/output.mp4 --title "Song Title" --at 8  # frame at 8 s
+.venv/bin/python make_cover.py output/output.mp4 --title "Song Title" --artist-color 8FE3FF  # light-blue artist name
 ```
 
-動作確認を速くしたいときは `--model small` を使う（既定は `large-v3`。モデルは `~/.cache/whisper/` にキャッシュ済み）。`input/` のサンプルは `chorus.wav`（32 秒）・`chorus_lyrics.txt`・`chorus_aligned.ass`（8 行）・`keyframes.zip`（4 カット）・`video*.mp4`。
+For a faster check use `--model small` (default `large-v3`; models are cached in `~/.cache/whisper/`). Samples in `input/`: `chorus.wav` (32 s), `chorus_lyrics.txt`, `chorus_aligned.ass` (8 lines), `keyframes.zip` (4 cuts), `video*.mp4`.
 
-描画に触るリファクタは、変更前後で同じ入力を書き出し、フレームのハッシュを比べて確かめる（x264 の出力は同じ入力なら毎回一致する）:
+For refactors that touch rendering, render the same input before and after and compare frame hashes (x264 output is identical for identical input):
 
 ```bash
 .venv/bin/python burn_subs.py input/chorus.wav input/keyframes.zip /tmp/a.mp4 --subs input/chorus_aligned.ass
@@ -41,63 +47,66 @@ ffmpeg -v error -i /tmp/a.mp4 -map 0:v -f framemd5 - | grep -v '^#' | md5
 
 ## Architecture
 
-AP MV エコシステム（keyframes.zip を生成する側）のローカル後処理ツール群。①→②→③ のパイプラインで、各段の受け渡しはファイル。`beatmv/` は keyframes.zip を使わない別系統で、burn_subs.py の `parse_karaoke`・スタイル読み込みを共有する。
+Local post-processing tools for the AP MV ecosystem (the side that produces keyframes.zip). A ① → ② → ③ pipeline that passes files between steps. `beatmv/` is a separate line that does not use keyframes.zip; it shares burn_subs.py's `parse_karaoke` and style loading.
 
-**姉妹リポジトリとの関係**: `~/PycharmProjects/lyric-video` は本リポジトリを Cloud Run Web サービス化したもので、`app/align_subtitles.py` / `app/burn_subs.py` は本リポジトリからのコピー（差分は Docker 用 Linux フォントパス程度）。ただし burn_subs.py は e7f39e1 で行の割り方を `fit_units` / `best_split_index` にまとめたため、コードの形が異なる（挙動は同じ）。片方を修正したらもう片方への移植が必要か検討すること。
+**Sister repository**: `~/PycharmProjects/lyric-video` turns this repository into a Cloud Run web service; its `app/align_subtitles.py` / `app/burn_subs.py` are copies of the ones here (differing mostly in Linux font paths for Docker). burn_subs.py was restructured in e7f39e1 (`fit_units` / `best_split_index`), so the code shapes differ though the behaviour is the same. When fixing one, consider whether the other needs the port.
 
-### align_subtitles.py — 強制アライメント（文字起こしではない）
+### align_subtitles.py — forced alignment (not transcription)
 
-stable-ts の `model.align()` で**既存の歌詞テキストを音声のタイミングに割り当てる**。ゼロからの transcribe パスは無い。
+stable-ts `model.align()` **assigns the existing lyric text to the audio's timing**. There is no transcribe-from-scratch path.
 
-Whisper 呼び出し以外は純粋関数に分割してある（`load_source_subs` → `extract_lyric_lines` → `map_chars_to_lines` → `build_karaoke_text` → `build_aligned_subs` → `fill_repeat_gaps` → `trim_overlaps`）。ロジックを変えるときは `tests/test_align_subtitles.py` を先に更新すること。
+Everything except the Whisper call is split into pure functions (`load_source_subs` → `extract_lyric_lines` → `map_chars_to_lines` → `build_karaoke_text` → `build_aligned_subs` → `fill_repeat_gaps` → `trim_overlaps`). Update `tests/test_align_subtitles.py` first when changing the logic.
 
-- 歌詞入力は3形式: keyframes.zip 内の `subtitles.ass` / 単体 ASS / プレーンテキスト。`.txt` の場合は `subs_from_txt()` が既定の Karaoke スタイル（Arial 64px・黄ハイライト・PlayRes 1920x1080、既存 subtitles.ass と同一値）で ASS を合成してから同じフローに乗せる。行の区切りがそのまま字幕の行割りになる。
-- **文字数照合が厳密**: 句読点・記号（`PUNCT_PATTERN`）を除いた歌詞の文字数と Whisper の検出文字数が一致しないと中断する。歌詞と歌唱のズレ（アドリブ・繰り返し省略）で失敗する設計。
-- 句読点は直前の文字の `\k` に時間ごと吸収させる。1行目のみ、元 ASS の開始が Whisper 判定より 0〜3 秒早い場合は元 ASS の開始時刻を採用（歌い出し対応）。行間ギャップは次行開始直前まで延長（繰り返し歌唱対応）、逆に `TAIL_MS` の余韻で次行と重なった行末は次行の開始で切る（`trim_overlaps`）。burn_subs.py は「先の行優先」で1行しか描かないので重なっても見えないが、この ASS を libass に直接渡す使い方（姉妹プロジェクトのナレーション動画テンプレ `~/test/re6x`）では2行が積まれて表示されるため。
-- 句読点だけの行は照合対象の文字を持たないためタイミングが割り当たらず、元 ASS の時刻（txt 入力なら仮の時刻）のまま残る。中断はせず警告を出すので、呼び出し側で句読点のみの行を作らないこと。
+- Three lyric inputs: `subtitles.ass` inside keyframes.zip / a standalone ASS / plain text. For `.txt`, `subs_from_txt()` builds an ASS with the default Karaoke style (Arial 64px, yellow highlight, PlayRes 1920x1080, the same values as the existing subtitles.ass) and it follows the same flow. Line breaks become the subtitle lines.
+- **Strict character matching**: if the lyric character count without punctuation and symbols (`PUNCT_PATTERN`) differs from what Whisper detected, it stops. It is designed to fail when the lyrics differ from what was sung (ad-libs, skipped repeats).
+- Punctuation is folded, time included, into the `\k` of the character before. For the first line only, if the input ASS starts 0–3 s earlier than Whisper, the input start is kept (the sung entry). Gaps between lines are extended to just before the next line (repeated singing), and line ends that overlap the next line because of the `TAIL_MS` tail are cut at the next line's start (`trim_overlaps`). burn_subs.py draws only one line (the earlier wins), so overlaps do not show there, but passing this ASS straight to libass (the sister project's narration video template, `~/test/re6x`) would stack two lines.
+- A punctuation-only line has no characters to match, so it gets no timing and keeps the input ASS times (placeholders for txt input). It warns rather than stops, so callers should not create punctuation-only lines.
 
-### burn_subs.py — 差分描画によるカラオケ焼き込み
+### burn_subs.py — karaoke burning with diff rendering
 
-`\k` タグを解析し、**字幕状態が変化する時刻だけ**フレームを描画して ffmpeg concat で結合する。状態キーは（背景画像, 字幕イベント, ハイライト済み文字数）で、同一状態のフレームはキャッシュ再利用。フォントサイズ・マージン・アウトラインは ASS の `PlayResY` と実画像解像度の比率で自動スケールする。スタイルは `Karaoke` という名前のスタイルを優先して読む。
+Parses `\k` tags and draws a frame **only when the subtitle state changes**, joining them with ffmpeg concat. The state key is (background image, subtitle event, highlighted characters); frames with the same state are reused from the cache. Font size, margins and outline scale with the ratio of the ASS `PlayResY` to the real image resolution. The style named `Karaoke` is preferred.
 
-ASS スタイル + `--style-file` から `RenderConfig` を組み立てる処理は `build_render_config()` に集約しており、`burn_subs_video.py` も同じ関数を使う（`force_mode="line"` を渡す）。スタイル指定を増やすときはこの関数だけを直せば両方に反映される。
+Building a `RenderConfig` from the ASS style plus `--style-file` lives in `build_render_config()`, which `burn_subs_video.py` also uses (passing `force_mode="line"`). Add new style options there and both pick them up.
 
-`--style-file`（JSON、`styles/` にプリセット。`karaoke_blue` は beatmv の既定の配色を兼ねる）で描画スタイルを上書きできる。`mode: "line"` はカラオケハイライトなしの1行表示で、文字単位の遷移を集めないため状態数が大幅に減る（サンプルで 223→33）。px 値はすべて PlayResY 基準で指定し実解像度へスケールする、という既存の規約に従うこと。不正値は警告してフォールバックする設計（動画生成自体は失敗させない）。
+`--style-file` (JSON, presets in `styles/`; `karaoke_blue` doubles as beatmv's default palette) overrides the drawing style. `mode: "line"` shows one line without karaoke highlighting and does not collect per-character transitions, so the state count drops sharply (223 → 33 on the sample). Follow the existing rule that every px value is given for PlayResY and scaled to the real resolution. Invalid values warn and fall back (the video itself never fails because of them).
 
-line モードの `render_line_frame` は幅に収まらない行を自動調整する（`fit_line_layout`: 縮小率 `LINE_SHRINK_FLOOR` までは1行のまま縮小、それ以下なら `best_split` で2行折り返し。英語はスペース位置のみ、日本語は全文字境界から幅バランス最良点を選ぶ）。透過 RGBA レイヤーを渡すと透過を保って返す（burn_subs_video.py のオーバーレイ用。box 描画時にモードを維持する実装に依存している）。
+Line mode's `render_line_frame` adjusts lines that do not fit (`fit_line_layout`: shrink on one line down to `LINE_SHRINK_FLOOR`, otherwise wrap into two lines with `best_split`; English splits only at spaces, Japanese at the best-balanced character boundary). Given a transparent RGBA layer it keeps the transparency (for burn_subs_video.py overlays; it relies on the box drawing keeping the mode).
 
-フォントは `FONT_CANDIDATES` の順に探索（ヒラギノ角ゴ W7 が最優先）。`load_font()` は make_cover.py からも import されており、字幕とカバーのフォントを一致させている。
+Fonts are searched in `FONT_CANDIDATES` order (Hiragino Kaku Gothic W7 first). make_cover.py imports `load_font()` so the subtitles and covers share a font.
 
-**注意**: 出力 MP4 は「1フレームが数秒続く」特殊構造（キーフレームも先頭のみ）のため、`ffmpeg -ss` でのフレーム取り出しは別のフレームを拾って「字幕が無い」ように見えることがある。検証には `-vf "select=eq(n\,N)" -vsync 0` でフレーム番号指定を使うこと。
+**Note**: the output MP4 has an unusual structure (one frame lasts seconds, a keyframe only at the start), so extracting a frame with `ffmpeg -ss` can pick another frame and look like "no subtitles". Use frame numbers with `-vf "select=eq(n\,N)" -vsync 0` when checking.
 
-karaoke モード（既定）の `render_frame` も同じ方針の `fit_karaoke_layout`／`best_split_segs` で自動調整する。こちらは `\k` セグメントを分割単位にする（セグメント内部では割らない）以外は line モードと同じで、縮小→2行折り返しの判断は `fit_units`、割る位置は `best_split_index` に1つにまとめてある（単位が1文字か `\k` セグメントかだけが違う）。どちらかのモードだけ直すと、もう片方と挙動が食い違うので、このコアを直すこと。縦長（ショート動画など）は横長より折り返しが発生しやすい。
+Karaoke mode's (default) `render_frame` adjusts the same way with `fit_karaoke_layout` / `best_split_segs`. The only difference from line mode is that `\k` segments are the split units (never split inside one); the shrink-or-wrap decision is in `fit_units` and the split position in `best_split_index` (the unit is a character or a `\k` segment). Fixing only one mode would make the two disagree, so fix this core. Portrait videos (Shorts) wrap more often than landscape.
 
-### burn_subs_video.py — 完成済み動画への字幕焼き込み
+### burn_subs_video.py — burning subtitles onto a finished video
 
-スライドショーではなく実写 MV 動画（映像・カメラワーク保持）に字幕を乗せる。行ごとに `render_line_frame` で透過 PNG を作り、ffmpeg の `overlay` + `enable='between(t,start,end)'` チェーンで時間指定合成する（音声はコピー）。行の重なりは `build_windows` が「先の行優先」（burn_subs の `event_at` と同じ規則）で解消する。line モード専用（カラオケの文字単位状態をオーバーレイにすると数百入力になるため非対応）。
+Puts subtitles on a live-action music video (picture and camera work kept) instead of a slideshow. Each line becomes a transparent PNG via `render_line_frame`, composited at its time with an ffmpeg `overlay` + `enable='between(t,start,end)'` chain (audio copied). Overlapping lines are resolved by `build_windows`, earlier line first (the same rule as burn_subs' `event_at`). Line mode only (karaoke's per-character states would need hundreds of overlay inputs).
 
-### make_cover.py — カバー画像生成
+### make_cover.py — cover images
 
-MP4 のフレーム（既定は先頭、`--at SEC` で任意の時刻）を ffmpeg で抽出し、Pillow でタイトル＋アーティスト名を合成。`-ss` は出力側に置いている（burn_subs.py の出力はキーフレームが先頭にしかなく、入力側シークでは別のフレームを拾うため）。タイトル省略時は **MP4 の親フォルダ名**を使う（曲名フォルダに動画を置く運用が前提）。アーティスト名の既定は `Digital Armor Style`。長いタイトルは幅 92% に収まるまでフォント自動縮小。ショート版はぼかし+減光した背景の中央に 16:9 フレームを重ねる。`burn_subs` を import するので、これも `.venv` で実行する。
+Extracts an MP4 frame (the first by default, any time with `--at SEC`) with ffmpeg and draws the title and artist name with Pillow. `-ss` is on the output side (burn_subs.py output has a keyframe only at the start, so input-side seeking picks another frame). Without a title it uses **the MP4's parent folder name** (videos are kept in a folder named after the song). The default artist name is `Digital Armor Style`. Long titles shrink until they fit 92 % of the width. The Shorts version centres the 16:9 frame over a blurred, darkened background. It imports `burn_subs`, so run it with `.venv` too.
 
-### beatmv/ — 画像素材なしで音から描く MV
+### beatmv/ — a music video drawn from the audio, no image assets
 
-keyframes.zip のスライドショーとは別の作り方。Suno などで作った曲を解析し、キックのリング・打楽器の縦線・打点のタイムライン・`\k` 単位で塗る歌詞を Pillow で 1 コマずつ描いて FFmpeg に流す。入口は `python -m beatmv {analyze,align,render,srt,thumb-bg} songs/<slug>`。
+A different approach from the keyframes.zip slideshow. It analyses a song (made with Suno etc.) and draws, frame by frame with Pillow, a kick ring, percussion lines, a hit timeline and lyrics filled per `\k`, piping frames to FFmpeg. Entry point: `python -m beatmv {analyze,align,render,srt,thumb-bg} songs/<slug>`.
 
-- **曲ごとの違いは `songs/<slug>/song.toml` だけに書く**（曲名・音源・作業ディレクトリ・セクションの時刻・`drum_rule`・`lyrics_aligner`）。曲ごとにスクリプトをコピーすると、4K 対応のような改修が片方にしか入らず食い違う（移す前に実際に起きた）。`beats.json` と `lyrics.ass` も同じディレクトリに置く。**`songs/` は git 管理外**（公開リポジトリに曲の歌詞やデータを載せない）。`songs/` と `work/` は手元の別リポジトリへのシンボリックリンクで、曲の設定・スクリプト・文面はそちらでコミットする（音源・映像・画像は向こうでも git に入れない。置き場所はローカルのメモにある）。テストは `tests/fixtures/song/` の架空の曲を使い、実際の曲を読まない。
-- **時刻はレシピではなく、できた音から取る。** Suno はセクションの秒数を守らず、頼んでいない間奏を足す（境界の調律者で 11 秒）。`sections` などには Suno の時刻合わせ・解析の値を書く。
-- **座標・太さ・文字サイズは 1920x1080 基準で書き、`Ctx.px()` を通す。** 既定の倍率は 2（4K）。数値をそのまま書くと 4K で崩れる。
-- **`drum_rule` は rock / edm / trance / dnb。** 帯域ごとに別々にピークを拾う方法は、スネア帯がキックのアタックを拾って両者が同じ打点列になった。オンセットを先に取り、低域とスネア帯の立ち上がりで振り分ける。EDM の四つ打ちはキックのアタックが 1-4kHz にも出るので基準が違う（`drums.classify` のテストに両方の例がある）。edm ではキックの打点が打楽器の条件も満たし、PERC の約半分がキックと同じ打点になる（1〜4 拍に均等なのでクラップではない）。trance はそれを打楽器から外す。dnb（ドラムンベース）は rock の基準からキックになった打点をスネアから外し、立ち上がりの弱いゴーストノートとハットをスネアから外し、drums.json の ghost としてタイムラインのスネアの段に小さく薄く出す（画面中央の縦線は光らせない。捨てると「鳴っているのに表示されない」と指摘された）。rock では DnB のキックのアタックが 1 拍目のスネアとしても光り、ブレイクの細かい打点でスネアの列がせわしなかった。
-- **打点にするのは、拍の位置で検証できたものだけ。** 演出を足す前に、検出した時刻を `beats.json` の拍と突き合わせ、ずれ（40 ms 以内か）と取りこぼし（鳴っている区間で拍の何割に乗るか）を確かめる。アクセルを踏み抜けでは、ベースの打点は時刻が合っても数が 2〜8 割しか取れず、クラップ／ハットの分割は 2・4 拍に集まらなかったので、どちらも打点にしていない。ベースは音量で描く（`bass_band`、`drums.write_bass_rms`、Demucs の 4 分割を `sep4/` に置く）。
-- **`lyrics_aligner = "whisper"`（align_subtitles.py で作った ASS）は、最初の文字の `\k` に前の行の残りが入る**ので、長いときは歌い出し直前から塗る（`lyrics.load_lines`）。SRT も同じ時刻を使う。
-- **カナで歌わせた曲は `lyrics_aligner = "hybrid"` にし、`python -m beatmv align songs/<slug>` で lyrics.ass を作る**（`beatmv/suno_align.py`）。行の開始と終わりは Suno の時刻合わせ（`work/<slug>/suno_alignment.json`。MCP の audio-lyrics-alignment の応答を保存したもの）、行の中の文字の配分は Whisper（`work/<slug>/lyrics.whisper.ass`。align_subtitles.py の出力）から取る。Suno は行の位置が正確でも文字がカナで、Whisper は漢字に時刻を振れても行の両端がずれる（Overclock の終盤で 2〜4 秒）ため。Whisper の最初の文字は 0.4 秒、最後の文字は 1 秒に詰めてから Suno の行の範囲へ写す。Overclock で手作業で作った字幕と、手で直した 2 行を除いて一致した。行数が合わなければ推測で合わせずに中断し、1.5 秒を超える伸ばしと、2 秒以上ずれた行の開始は「確認」として出すので、その行だけ耳で確かめて手で直す。
-- **波形の振れ幅は `wave` で選ぶ（`mix` が既定、`vocals` は声だけ）。** リング＝キック、縦線＝スネア、帯＝ベースと、ほかの要素は 1 つの音に結びついているので、`vocals` にすると波形＝声になり、画面の要素がすべて 1 つの音に対応する。Overclock では声だけにすると Intro・間奏・Outro の振れ幅が 0.0〜0.03 になり（`mix` では 0.48〜0.90）、歌っている間だけ大きく動いた。`vocal_rms.npy` は analyze が Demucs の 4 分割（`sep4/`）から書く。既定を `mix` のままにしているのは、作り直した既存の曲の見た目が黙って変わらないようにするため。フックの行を歌っている間は、波形の色も `hook_color` へ `HOOK_FADE`（0.5 秒）かけて寄せる（点滅させない）。
-- **フックの行（日本語を含まない 4 語以内の英語の行、`lyrics.is_hook_line`）は大きめの文字（`HOOK_FONT`）にし、歌った部分を `hook_color`（既定はシアン）で塗る。** Suno 向けのプロンプトでサビの頭を `Override! Override!` のような叫びにしているため。点滅や拍ズームを使わず、大きさと色だけで目立たせる。
-- **配色は `styles/<name>.json` を burn_subs の `--style-file` と共有する**（`beatmv/style.py`）。スライドショーの MV と配色を揃えるため。beatmv は色だけを読み、大きさ（`font_size`・`outline`）は使わない。beatmv だけのキー（`accent_color`・`background_top`）は `load_style_file` が黙って通すので burn_subs には影響しない。不正な色は burn_subs では警告して捨てるが、beatmv では配色が黙って変わらないようエラーにする。
-- 演出の制約: 画面全体のフラッシュ・明るさの脈動・拍ズームはしない（ちらつきに見える、というユーザーの指摘）。
-- 音源・分離ステム・drums.json・rms.npy・MV は `work/`（git 管理外）。Demucs は既定で入力をランダムにずらして推論する（`--shifts 1`）ため再実行で結果が揺れる。分離済みなら作り直さない。
-- multiprocessing は macOS で spawn なので、ワーカーは `Pool(initializer=...)` で `configure()` し直す（モジュールの状態は引き継がれない）。
+- **Per-song differences go only in `songs/<slug>/song.toml`** (title, audio, work directory, section times, `drum_rule`, `lyrics_aligner`). Copying scripts per song made changes like 4K support land in only one copy (it happened before the move). Keep `beats.json` and `lyrics.ass` in the same directory. **`songs/` is not tracked by git** (no lyrics or song data in a public repository). `songs/` and `work/` are symlinks to another local repository, where song settings, scripts and texts are committed (audio, video and images are not committed there either; the location is in local notes). Tests use the made-up song in `tests/fixtures/song/` and never read real songs.
+- **Take times from the finished audio, not the recipe.** Suno does not keep the section lengths and adds interludes nobody asked for (11 s on 境界の調律者). Write values from Suno's alignment and analysis into `sections` etc.
+- **Write coordinates, widths and text sizes for 1920x1080 and pass them through `Ctx.px()`.** The default scale is 2 (4K). Raw numbers break at 4K.
+- **`drum_rule` is rock / edm / trance / dnb.** Picking peaks per band made the snare band pick up the kick's attack, so both rows became the same hits. Onsets are taken first and assigned by the rise of the low band versus the snare band. A four-on-the-floor kick's attack reaches 1–4 kHz, so EDM needs a different rule (the `drums.classify` tests have both examples). With edm, kick hits also meet the percussion condition and about half of PERC sits on a kick (evenly over beats 1–4, so not claps); trance removes them from percussion. dnb (drum and bass) takes the rock rule, removes hits that became kicks from the snare row, and removes weak-attack ghost notes and hats as well, keeping them as `ghost` in drums.json and drawing them as small light-blue stars on the snare row (`GHOST_STAR_R`, radius 11; they do not light the centre line. Dropping them was criticised as "playing but not shown"). With rock, a DnB kick's attack also lit as a downbeat snare and the breakbeat's small hits made the snare row busy.
+- **Only show as hits what has been verified against the beat grid.** Before adding visuals, compare detected times with the beats in `beats.json`: the offset (within 40 ms?) and the misses (on what share of beats in the playing sections?). On アクセルを踏み抜け, bass hits were on time but only 20–80 % were found, and splitting claps from hats did not land on beats 2 and 4, so neither is drawn as hits. Bass is drawn as loudness (`bass_band`, `drums.write_bass_rms`, Demucs 4-stem split in `sep4/`).
+- **With `lyrics_aligner = "whisper"` (an ASS from align_subtitles.py), the first character's `\k` holds the previous line's tail**, so a long one starts filling just before it is sung (`lyrics.load_lines`). SRT uses the same times.
+- **For songs sung from kana, set `lyrics_aligner = "hybrid"` and build lyrics.ass with `python -m beatmv align songs/<slug>`** (`beatmv/suno_align.py`). Line starts and ends come from Suno's alignment (`work/<slug>/suno_alignment.json`, the saved MCP audio-lyrics-alignment response); character timing inside a line comes from Whisper (`work/<slug>/lyrics.whisper.ass`, align_subtitles.py output). Suno places lines accurately but returns kana; Whisper times kanji but drifts at line ends (2–4 s at the end of Overclock). Whisper's first character is trimmed to 0.4 s and its last to 1 s before mapping onto Suno's span. On Overclock this matched the hand-made subtitles except two hand-fixed lines. If line counts differ it stops rather than guess; holds over 1.5 s and line starts more than 2 s apart are listed for checking by ear and fixing by hand.
+- **For songs sung in English, set `lyrics_aligner = "suno"` and write lyrics.ass from Suno's word timings with `beatmv align`** (`suno_align.words_to_ass`). No Whisper. A gap between words over `GAP_TOKEN` (0.15 s) gets an empty `\k`; otherwise the next word fills during the gap, before it is sung. A word spanning a newline (`s\nColor`) is split between the previous and the next line. Punctuation Suno attaches to the next word (`! Still`) is moved back onto the word before (`_LEADING_PUNCT`); otherwise the `!` stays unfilled until the next word (New Morning). Suno's alignment can also break (the last two lines squeezed into 1 s on Collision, a word held for 12 s), so compare it with `vocal_rms.npy` and fix `suno_alignment.json` before aligning.
+- **A translation (`translation`) must have one row per subtitle line; differing counts stop it** (`song.load_translation`), because a one-row offset gives every line another line's translation. The translation is shown under the lyric without filling, and the next-line preview is hidden (three rows leave the viewer unsure what to read). It is subtitles only, so Japanese translations use more kanji for readability.
+- **Latin-only lines use a Latin typeface** (`font_for`, `EN_FONT`, default Helvetica Neue scaled ×1.18 to keep Hiragino's line width; `BEATMV_EN_FONT=sf|hiragino`). Hiragino's Latin letters read as "Japanese-made" to people abroad. Lines containing Japanese stay in Hiragino.
+- **Choose the waveform amplitude with `wave` (`mix` by default, `vocals` for the voice only).** Every other element is tied to one sound (ring = kick, lines = snare, band = bass), so with `vocals` the waveform is the voice and every element on screen maps to one sound. On Overclock, voice-only amplitude in the intro, interludes and outro was 0.0–0.03 (0.48–0.90 with `mix`), moving only while singing. analyze writes `vocal_rms.npy` from the Demucs 4-stem split (`sep4/`). `mix` stays the default so rebuilt existing songs do not change silently. While a hook line is sung, the waveform colour also moves to `hook_color` over `HOOK_FADE` (0.5 s), without flashing.
+- **Hook lines (English lines of up to four words without Japanese, `lyrics.is_hook_line`) use larger text (`HOOK_FONT`) and fill with `hook_color` (cyan by default)**, because the Suno prompts open each chorus with a shout such as `Override! Override!`. They stand out by size and colour only, no flashing or beat zoom.
+- **Colours come from `styles/<name>.json`, shared with burn_subs' `--style-file`** (`beatmv/style.py`), so slideshow videos and beatmv videos share a palette. beatmv reads colours only, never sizes (`font_size`, `outline`). beatmv-only keys (`accent_color`, `background_top`) pass silently through `load_style_file`, so burn_subs is unaffected. burn_subs warns about and drops invalid colours; beatmv raises, so a palette never changes silently.
+- Visual constraints: no full-screen flashes, pulsing brightness or beat zoom (they read as flicker, per user feedback).
+- Audio, separated stems, drums.json, rms.npy and videos live in `work/` (not tracked). Demucs randomly shifts its input by default (`--shifts 1`), so reruns vary; do not separate again if it is already done.
+- macOS multiprocessing uses spawn, so workers call `configure()` again via `Pool(initializer=...)` (module state is not inherited).
 
-### keyframes.zip の構成
+### keyframes.zip layout
 
-`cut_XX.png`（キーフレーム画像）+ `inputs.txt`（ffmpeg concat 形式の画像名と表示秒数）+ `subtitles.ass`。詳細は README.md 参照。
+`cut_XX.png` (keyframe images) + `inputs.txt` (image names and durations in ffmpeg concat format) + `subtitles.ass`. See README.md for details.

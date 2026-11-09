@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""完成済み動画（MV）に1行スタイル字幕を焼き込む。
+"""Burn one-line styled subtitles onto a finished video (music video).
 
-burn_subs.py がキーフレーム静止画のスライドショーを生成するのに対し、
-こちらは動画の映像・カメラワークを保ったまま、行ごとの字幕を
-透過PNG + ffmpeg overlay の時間指定合成で乗せる（line モード専用）。
+Where burn_subs.py builds a slideshow from keyframe stills, this keeps the video's picture and camera work
+and overlays each line as a transparent PNG with timed ffmpeg overlays (line mode only).
 
 Usage:
     python3 burn_subs_video.py <video.mp4> <subtitles.ass> [output.mp4] [--style-file styles/rock.json]
 
-字幕は align_subtitles.py の出力 ASS（\\k タグは無視し、行の開始/終了時刻のみ使用）。
+Subtitles are the ASS from align_subtitles.py (\\k tags are ignored; only line start/end times are used).
 """
 
 import argparse
@@ -30,7 +29,7 @@ from burn_subs import (
 
 
 def probe_size(video):
-    """ffprobe で動画の解像度を取得する。"""
+    """Get the video resolution with ffprobe."""
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
          "-show_entries", "stream=width,height", "-of", "csv=p=0", video],
@@ -41,9 +40,9 @@ def probe_size(video):
 
 
 def build_windows(subs):
-    """ASS イベントを (開始, 終了, テキスト) の重ならない表示区間に変換する。
+    """Turn ASS events into non-overlapping (start, end, text) display spans.
 
-    行が重なる場合は burn_subs の event_at と同じ「先の行が優先」で解消する。
+    Overlapping lines are resolved like burn_subs' event_at: the earlier line wins.
     """
     events = []
     for e in subs:
@@ -64,21 +63,21 @@ def build_windows(subs):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="動画に1行スタイル字幕を焼き込む。")
-    parser.add_argument("video", help="入力動画 (mp4)")
-    parser.add_argument("subtitles", help="タイミング付き ASS ファイル")
-    parser.add_argument("output", nargs="?", default="output_video.mp4", help="出力 MP4")
-    parser.add_argument("--style-file", help="描画スタイルの JSON（styles/ にプリセットあり）")
+    parser = argparse.ArgumentParser(description="Burn one-line styled subtitles onto a video.")
+    parser.add_argument("video", help="input video (mp4)")
+    parser.add_argument("subtitles", help="timed ASS file")
+    parser.add_argument("output", nargs="?", default="output_video.mp4", help="output MP4")
+    parser.add_argument("--style-file", help="style JSON (presets in styles/)")
     args = parser.parse_args()
 
     require_ffmpeg("ffmpeg", "ffprobe")
     for path in (args.video, args.subtitles):
         if not os.path.exists(path):
-            sys.exit(f"Error: ファイルが見つかりません: {path}")
+            sys.exit(f"Error: file not found: {path}")
 
     style_over = load_style_file(args.style_file) if args.style_file else {}
     if style_over.get("mode") == "karaoke":
-        print("Warning: 動画焼き込みは line モード専用のため mode=karaoke は無視します", file=sys.stderr)
+        print("Warning: burning onto video supports line mode only; ignoring mode=karaoke", file=sys.stderr)
 
     subs = pysubs2.load(args.subtitles)
     img_w, img_h = probe_size(args.video)

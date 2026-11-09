@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""キーフレーム画像に ASS カラオケ字幕を焼き込み、MP4 を生成する。
+"""Burn ASS karaoke subtitles onto keyframe images and produce an MP4.
 
 Usage:
     python3 burn_subs.py <audio.mp3> <keyframes.zip> [output.mp4] [--subs <subtitles.ass>] [--style-file <style.json>]
 
---style-file で描画スタイルを JSON で上書きできる（styles/ にプリセットあり）。
-mode="line" にするとカラオケハイライトなしの1行表示になる。
+--style-file overrides the drawing style with JSON (presets in styles/).
+mode="line" shows one line without karaoke highlighting.
 """
 
 import argparse
@@ -34,9 +34,9 @@ class RenderConfig:
     secondary: tuple
     outline_color: tuple
     mode: str = "karaoke"  # "karaoke" | "line"
-    position: str = "bottom"  # "top" | "center" | "bottom"（line モードのみ）
-    letter_spacing: int = 0  # 字間 px（line モードのみ）
-    box: Any = None  # ((r, g, b, a), pad_px) の背景座布団。None で無効
+    position: str = "bottom"  # "top" | "center" | "bottom" (line mode only)
+    letter_spacing: int = 0  # letter spacing in px (line mode only)
+    box: Any = None  # background box as ((r, g, b, a), pad_px); None disables it
 
 
 HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
@@ -45,19 +45,18 @@ LINE_BREAK_RE = re.compile(r"\\[nNh]")
 
 
 def hex_to_rgb(value):
-    """'#RRGGBB' を RGB タプルへ変換する。"""
+    """Convert '#RRGGBB' to an RGB tuple."""
     return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
 
 
 def require_ffmpeg(*tools):
-    """必要な外部コマンドの存在を確認する。無ければ導入方法を添えて中断する。
+    """Check that the required external commands exist; stop with install instructions if not.
 
-    ffmpeg 不在時に subprocess の FileNotFoundError がそのまま出ると原因が分かりにくいため、
-    処理を始める前に確認する。
+    Without ffmpeg, subprocess's FileNotFoundError is hard to read, so this is checked before any work starts.
     """
     missing = [t for t in tools if shutil.which(t) is None]
     if missing:
-        raise SystemExit(f"Error: {', '.join(missing)} が見つかりません（macOS: brew install ffmpeg）")
+        raise SystemExit(f"Error: {', '.join(missing)} not found (macOS: brew install ffmpeg)")
 
 
 FONT_CANDIDATES = [
@@ -71,7 +70,7 @@ FONT_CANDIDATES = [
 
 
 def safe_extract(zip_file, target_dir):
-    """ZIP を展開する。target_dir の外へ出るパスは展開せず中断する。"""
+    """Extract a ZIP. Stops instead of extracting a path that would land outside target_dir."""
     abs_target = os.path.abspath(target_dir) + os.sep
     for member in zip_file.infolist():
         dest = os.path.abspath(os.path.join(abs_target, member.filename))
@@ -81,12 +80,12 @@ def safe_extract(zip_file, target_dir):
 
 
 def color_to_rgb(c):
-    """pysubs2 の ASS カラーを PIL 用の RGB タプルへ変換する。"""
+    """Convert a pysubs2 ASS colour to an RGB tuple for PIL."""
     return (c.r, c.g, c.b)
 
 
 def parse_karaoke(raw_text):
-    """ASS の \\k タグを (開始cs, 終了cs, テキスト) のセグメント列へ分解する。"""
+    """Split ASS \\k tags into a list of (start cs, end cs, text) segments."""
     segments = []
     cs = 0
     for m in re.finditer(r'\{\\k(\d+)\}([^{]*)', raw_text):
@@ -98,17 +97,17 @@ def parse_karaoke(raw_text):
 
 
 def plain_text(raw_text):
-    """ASS イベントのテキストから装飾タグ（\\k など）と改行タグを取り除く。"""
+    """Remove override tags (\\k etc.) and line-break tags from an ASS event's text."""
     return LINE_BREAK_RE.sub("", TAG_RE.sub("", raw_text)).strip()
 
 
 def highlighted_count(segs, elapsed_cs):
-    """行の開始から elapsed_cs 経過した時点で、ハイライト済みの \\k セグメント数を返す。"""
+    """Number of highlighted \\k segments elapsed_cs after the line starts."""
     return sum(1 for start_cs, _end_cs, _text in segs if elapsed_cs >= start_cs)
 
 
 def read_images_with_durations(inputs_txt):
-    """ffmpeg concat 形式の inputs.txt を (画像ファイル名, 表示秒数) の並びとして読む。"""
+    """Read an ffmpeg-concat inputs.txt as a list of (image file name, seconds shown)."""
     images_with_durations = []
     current_file = None
     with open(inputs_txt, encoding="utf-8") as f:
@@ -123,7 +122,7 @@ def read_images_with_durations(inputs_txt):
 
 
 def build_timeline(work_dir, images_with_durations):
-    """表示秒数の並びから、各画像の絶対時刻の区間と全体の尺を求める。"""
+    """From the display lengths, compute each image's absolute time span and the total length."""
     timeline = []
     t = 0.0
     for img, dur in images_with_durations:
@@ -133,7 +132,7 @@ def build_timeline(work_dir, images_with_durations):
 
 
 def img_at(timeline, t_sec):
-    """指定時刻（秒）に表示されている画像のパスを返す。"""
+    """Path of the image shown at the given time (seconds)."""
     for start, end, img in timeline:
         if start <= t_sec < end:
             return img
@@ -141,7 +140,7 @@ def img_at(timeline, t_sec):
 
 
 def event_at(events, t_sec):
-    """指定時刻（秒）に表示されている字幕イベントを返す。重なる場合は先の行が優先。"""
+    """Subtitle event shown at the given time (seconds). When lines overlap, the earlier one wins."""
     for start, end, text in events:
         if start <= t_sec < end:
             return (start, end, text)
@@ -149,7 +148,7 @@ def event_at(events, t_sec):
 
 
 def load_font(font_size):
-    """日本語を描画できるフォントを FONT_CANDIDATES の順に探して読み込む。"""
+    """Find and load a font that can draw Japanese, in FONT_CANDIDATES order."""
     for path in FONT_CANDIDATES:
         if os.path.exists(path):
             try:
@@ -164,30 +163,30 @@ def load_font(font_size):
 
 
 def get_base_img(path, img_cache):
-    """背景画像をキャッシュから複製して返す（同じ画像を何度も読み直さない）。"""
+    """Return a copy of the background image from the cache (so the same image is not read again)."""
     if path not in img_cache:
         img_cache[path] = Image.open(path).convert("RGB")
     return img_cache[path].copy()
 
 
-LINE_MAX_WIDTH_RATIO = 0.92  # 1行が占めてよい画像幅の上限比率
-LINE_SHRINK_FLOOR = 0.7  # 1行のまま縮小してよい下限比。これ未満に縮むなら2行に折り返す
-MIN_FONT_SIZE = 12  # 自動縮小の下限（これ以上小さくすると判読できない）
+LINE_MAX_WIDTH_RATIO = 0.92  # widest share of the image a line may take
+LINE_SHRINK_FLOOR = 0.7  # smallest shrink allowed on one line; below this, wrap into two lines
+MIN_FONT_SIZE = 12  # lower bound for auto-shrinking (smaller is unreadable)
 
 
 def measure_line(draw, text, font, spacing):
-    """字間込みの1行の描画幅を返す。"""
+    """Rendered width of one line, letter spacing included."""
     if spacing > 0:
         return sum(draw.textlength(ch, font=font) for ch in text) + spacing * max(0, len(text) - 1)
     return draw.textlength(text, font=font)
 
 
 def best_split_index(draw, units, font, spacing):
-    """文字列の単位（1文字、または \\k セグメント）の並びを2行に割る位置を返す。
+    """Return where to split a list of text units (single characters or \\k segments) into two lines.
 
-    長い方の行の実測幅が最小になる位置を選ぶ。スペースで終わる単位があればその直後だけを
-    候補にし（英語歌詞の単語を割らない）、無ければ全境界を候補にする（日本語歌詞）。単位の
-    内部では割らない。どこで割っても片方が空になるときは None。
+    Picks the split that minimises the measured width of the longer line. If some units end in a space,
+    only the points right after them are candidates (English words are not split); otherwise every boundary
+    is (Japanese lyrics). Units themselves are never split. Returns None when every split leaves one side empty.
     """
     candidates = [i + 1 for i, u in enumerate(units[:-1]) if u.endswith(" ")]
     if not candidates:
@@ -205,7 +204,7 @@ def best_split_index(draw, units, font, spacing):
 
 
 def best_split(draw, text, font, spacing):
-    """1行テキストを2行に割る（文字単位）。分割できない場合は (text, "")。"""
+    """Split one line of text into two (by character). Returns (text, "") if it cannot be split."""
     idx = best_split_index(draw, list(text), font, spacing)
     if idx is None:
         return text, ""
@@ -213,10 +212,10 @@ def best_split(draw, text, font, spacing):
 
 
 def shrink_to_fit(draw, lines, font, spacing, max_w):
-    """指定した行群が max_w に収まるまでフォントを縮小する。
+    """Shrink the font until the given lines fit max_w.
 
-    MIN_FONT_SIZE まで縮めても収まらない場合はそのサイズで諦める（読めない字幕を出すより
-    はみ出しを許容する）。返り値のフォントとサイズは常に一致する。
+    If they still do not fit at MIN_FONT_SIZE, it stops there (overflowing beats unreadable subtitles).
+    The returned font and size always match.
     """
     size = getattr(font, "size", 0) or 0
     if size <= MIN_FONT_SIZE:
@@ -229,11 +228,11 @@ def shrink_to_fit(draw, lines, font, spacing, max_w):
 
 
 def fit_units(draw, units, cfg, spacing, split_texts):
-    """単位の並びが画像幅に収まるフォントと、2行に割る位置（1行のままなら None）を決める。
+    """Choose a font that fits the units within the image width, and where to split into two lines (None for one line).
 
-    まず1行のまま縮小を試み、縮小率が LINE_SHRINK_FLOOR を下回るほど長い場合は
-    2行に折り返してから収まるサイズへ縮小する。
-    split_texts(idx) は、idx で割ったときに実際に描く2行の文字列を返す（縮小の判定に使う）。
+    It first tries shrinking on one line; if that would go below LINE_SHRINK_FLOOR, it wraps into two lines
+    and shrinks those to fit. split_texts(idx) returns the two strings actually drawn when split at idx
+    (used to judge the shrink).
     """
     max_w = cfg.img_size[0] * LINE_MAX_WIDTH_RATIO
     font = cfg.font
@@ -254,7 +253,7 @@ def fit_units(draw, units, cfg, spacing, split_texts):
 
 
 def fit_line_layout(draw, text, cfg):
-    """1行テキストが画像幅に収まるフォントと行リスト（1〜2行、文字単位で割る）を決める。"""
+    """Choose a font and a list of lines (1–2, split by character) so one line of text fits the image width."""
     def split_texts(idx):
         return [text[:idx].strip(), text[idx:].strip()]
 
@@ -263,10 +262,10 @@ def fit_line_layout(draw, text, cfg):
 
 
 def best_split_segs(draw, segs, font, spacing):
-    """カラオケ \\k セグメント列を2行に割る（セグメント単位）。分割できない場合は (segs, [])。
+    """Split karaoke \\k segments into two lines (by segment). Returns (segs, []) if it cannot be split.
 
-    既存ASSは句読点や語末スペースが直前セグメントに吸収されているため、セグメント境界は
-    best_split の文字/スペース境界に対応する。
+    In existing ASS files, punctuation and trailing spaces are folded into the segment before, so segment
+    boundaries match best_split's character / space boundaries.
     """
     idx = best_split_index(draw, [t for _, _, t in segs], font, spacing)
     if idx is None:
@@ -275,7 +274,7 @@ def best_split_segs(draw, segs, font, spacing):
 
 
 def fit_karaoke_layout(draw, segs, cfg):
-    """カラオケ \\k セグメント列が画像幅に収まるフォントと行分割（1〜2行）を決める。"""
+    """Choose a font and a line split (1–2 lines) so the karaoke \\k segments fit the image width."""
     texts = [t for _, _, t in segs]
 
     def split_texts(idx):
@@ -286,10 +285,10 @@ def fit_karaoke_layout(draw, segs, cfg):
 
 
 def render_line_frame(img, text, cfg):
-    """1行テキストをスタイル設定（配置・字間・座布団）に従って描画する。
+    """Draw one line of text following the style (placement, letter spacing, background box).
 
-    幅に収まらないテキストはフォント縮小または2行折り返しで調整する。
-    透過レイヤー（RGBA）を渡された場合は透過を保ったまま返す（動画オーバーレイ用）。
+    Text that does not fit is shrunk or wrapped into two lines. Given a transparent layer (RGBA), it keeps the
+    transparency (for video overlays).
     """
     img_w, img_h = cfg.img_size
     draw = ImageDraw.Draw(img)
@@ -312,7 +311,7 @@ def render_line_frame(img, text, cfg):
     else:
         block_top = img_h - block_h - cfg.margin_v
 
-    # draw.text の y はグリフ上端が y+bbox[1] に来るため bbox[1] 分ずらす
+    # draw.text puts the glyph top at y + bbox[1], so offset by bbox[1]
     placements = []
     cur_top = block_top
     for ln, w, bbox in line_metrics:
@@ -352,10 +351,10 @@ def render_line_frame(img, text, cfg):
 
 
 def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
-    """1フレーム分の背景画像に、その時刻の字幕を描画する。
+    """Draw the subtitle for that time onto one frame's background image.
 
-    karaoke モードは \\k セグメント単位でハイライト色を塗り分け、line モードは
-    行全体を render_line_frame に委ねる。
+    Karaoke mode colours each \\k segment with the highlight or waiting colour; line mode hands the whole line
+    to render_line_frame.
     """
     img = get_base_img(img_path, img_cache)
     if evt is None:
@@ -405,9 +404,9 @@ def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
 
 
 def collect_transition_times(events, total_dur, include_char_transitions=True):
-    """描画結果が変化しうる時刻をすべて集める。
+    """Collect every time at which the rendered result may change.
 
-    line モードでは文字単位のハイライトが無いため、行の開始/終了のみ集める。
+    Line mode has no per-character highlight, so only line starts and ends are collected.
     """
     transitions = {0.0, total_dur}
     for start, end, text in events:
@@ -429,10 +428,10 @@ def build_concat_lines(
     frames_dir,
     img_cache=None,
 ):
-    """状態が変わる区間ごとにフレームを描画し、ffmpeg concat 用の行を返す。
+    """Draw a frame for each span where the state changes, and return lines for ffmpeg concat.
 
-    状態キー（背景画像, 字幕イベント, ハイライト済み文字数）が同じ区間は
-    描画済みのフレームを使い回す。
+    Spans with the same state key (background image, subtitle event, highlighted characters) reuse an
+    already drawn frame.
     """
     if img_cache is None:
         img_cache = {}
@@ -479,7 +478,7 @@ def build_concat_lines(
 
 
 def run_ffmpeg(concat_txt, audio, output):
-    """描画済みフレームと音声を MP4 にエンコードする。"""
+    """Encode the drawn frames and the audio into an MP4."""
     print("\nRunning ffmpeg...")
     return subprocess.run(
         [
@@ -497,46 +496,46 @@ def run_ffmpeg(concat_txt, audio, output):
 
 
 def load_style_file(path):
-    """スタイル JSON を読み込み、不正値は警告して除外した dict を返す。"""
+    """Load the style JSON and return a dict with invalid values warned about and removed."""
     with open(path, encoding="utf-8") as f:
         style = json.load(f)
     if not isinstance(style, dict):
-        raise SystemExit(f"Error: スタイルファイルは JSON オブジェクトである必要があります: {path}")
+        raise SystemExit(f"Error: the style file must be a JSON object: {path}")
 
     if style.get("mode") not in (None, "karaoke", "line"):
-        print(f"Warning: 不明な mode '{style['mode']}' → karaoke を使用", file=sys.stderr)
+        print(f"Warning: unknown mode '{style['mode']}' → using karaoke", file=sys.stderr)
         style.pop("mode")
     if style.get("position") not in (None, "top", "center", "bottom"):
-        print(f"Warning: 不明な position '{style['position']}' → bottom を使用", file=sys.stderr)
+        print(f"Warning: unknown position '{style['position']}' → using bottom", file=sys.stderr)
         style.pop("position")
     for key in ("primary_color", "secondary_color", "outline_color"):
         v = style.get(key)
         if v is not None and not (isinstance(v, str) and HEX_COLOR_RE.fullmatch(v)):
-            print(f"Warning: {key} は '#RRGGBB' 形式で指定してください（{v!r}）→ ASS の値を使用", file=sys.stderr)
+            print(f"Warning: {key} must be '#RRGGBB' ({v!r}) → using the ASS value", file=sys.stderr)
             style.pop(key)
     font = style.get("font")
     if font is not None and not os.path.exists(font):
-        print(f"Warning: スタイル指定のフォントが見つかりません: {font} → 既定の探索順を使用", file=sys.stderr)
+        print(f"Warning: font in the style not found: {font} → using the default search order", file=sys.stderr)
         style.pop("font")
     index = style.get("font_index")
     if index is not None and not (isinstance(index, int) and not isinstance(index, bool) and index >= 0):
-        print(f"Warning: font_index は 0 以上の整数で指定してください（{index!r}）→ 0 を使用", file=sys.stderr)
+        print(f"Warning: font_index must be an integer of 0 or more ({index!r}) → using 0", file=sys.stderr)
         style.pop("font_index")
     return style
 
 
 def pick_ass_style(subs, source=""):
-    """描画の土台にする ASS スタイルを選ぶ（Karaoke スタイル優先）。"""
+    """Pick the ASS style to render from (the Karaoke style first)."""
     style = subs.styles.get("Karaoke")
     if style is not None:
         return style
     if not subs.styles:
-        raise SystemExit(f"Error: ASS にスタイル定義がありません: {source or '(subtitles)'}")
+        raise SystemExit(f"Error: the ASS has no style definitions: {source or '(subtitles)'}")
     return next(iter(subs.styles.values()))
 
 
 def _parse_box(style_over, scale):
-    """スタイル JSON の box 指定を ((r, g, b, a), pad_px) へ変換する。無効なら None。"""
+    """Convert the style JSON's box into ((r, g, b, a), pad_px). None if invalid."""
     box_over = style_over.get("box")
     if not isinstance(box_over, dict):
         return None
@@ -549,12 +548,12 @@ def _parse_box(style_over, scale):
 
 
 def build_render_config(subs, img_size, style_over, force_mode=None, subs_source=""):
-    """ASS スタイルと style.json の上書きから RenderConfig を組み立てる。
+    """Build a RenderConfig from the ASS style and the style.json overrides.
 
-    px 値（font_size / margin_v / outline / letter_spacing / box.pad）は ASS の PlayResY 基準で
-    指定されている前提で、実際の画像・動画の高さへスケールする。burn_subs.py（スライドショー）と
-    burn_subs_video.py（動画オーバーレイ）で同じ見た目になるよう、両者でこの関数を共有する。
-    force_mode を渡すと style.json の mode 指定を無視して固定する（動画側は line モード専用）。
+    Pixel values (font_size / margin_v / outline / letter_spacing / box.pad) are taken as given for the
+    ASS PlayResY and scaled to the real image or video height. burn_subs.py (slideshow) and
+    burn_subs_video.py (video overlay) share this function so both look the same.
+    force_mode ignores style.json's mode and fixes it (the video side supports line mode only).
     """
     img_w, img_h = img_size
     play_res_y = int(subs.info.get("PlayResY", "1080"))
@@ -586,8 +585,8 @@ def build_render_config(subs, img_size, style_over, force_mode=None, subs_source
     print(f"Primary: {primary}, Secondary: {secondary}")
 
     if "font" in style_over:
-        # ttc は 1 ファイルに複数ウェイトが入っている（例: ヒラギノ明朝 ProN は 0=W3 / 2=W6）。
-        # 既定の 0 以外を使いたいときだけ font_index で選ぶ。
+        # A ttc holds several weights in one file (e.g. Hiragino Mincho ProN: 0 = W3 / 2 = W6).
+        # Pick one with font_index only when something other than the default 0 is wanted.
         font_index = int(style_over.get("font_index", 0))
         font = ImageFont.truetype(style_over["font"], font_size, index=font_index)
         print(f"Font: {style_over['font']} (index {font_index})")
@@ -610,61 +609,61 @@ def build_render_config(subs, img_size, style_over, force_mode=None, subs_source
 
 
 def extract_keyframes(zip_path, work_dir):
-    """keyframes.zip を展開し、(画像ファイル名, 表示秒数) の並びを返す。
+    """Extract keyframes.zip and return the list of (image file name, seconds shown).
 
-    ZIP の中身が想定と違う場合はトレースバックではなく原因の分かるメッセージで中断する。
+    If the ZIP is not as expected, it stops with a message that names the cause instead of a traceback.
     """
     print(f"Extracting {zip_path} -> {work_dir}")
     try:
         with zipfile.ZipFile(zip_path) as z:
             safe_extract(z, work_dir)
     except FileNotFoundError:
-        raise SystemExit(f"Error: keyframes ZIP が見つかりません: {zip_path}") from None
+        raise SystemExit(f"Error: keyframes ZIP not found: {zip_path}") from None
     except zipfile.BadZipFile:
-        raise SystemExit(f"Error: keyframes ZIP を読み込めません（壊れているか ZIP ではありません）: {zip_path}") from None
+        raise SystemExit(f"Error: cannot read the keyframes ZIP (damaged or not a ZIP): {zip_path}") from None
 
     inputs_txt = os.path.join(work_dir, "inputs.txt")
     if not os.path.exists(inputs_txt):
-        raise SystemExit(f"Error: ZIP に inputs.txt が含まれていません: {zip_path}")
+        raise SystemExit(f"Error: the ZIP has no inputs.txt: {zip_path}")
 
     images_with_durations = read_images_with_durations(inputs_txt)
     if not images_with_durations:
-        raise SystemExit(f"Error: inputs.txt に画像エントリがありません: {zip_path}")
+        raise SystemExit(f"Error: inputs.txt has no image entries: {zip_path}")
 
     missing = [name for name, _ in images_with_durations if not os.path.exists(os.path.join(work_dir, name))]
     if missing:
-        raise SystemExit(f"Error: inputs.txt が参照する画像が ZIP にありません: {', '.join(missing[:5])}")
+        raise SystemExit(f"Error: images listed in inputs.txt are missing from the ZIP: {', '.join(missing[:5])}")
     return images_with_durations
 
 
 def resolve_subtitles(work_dir, subs_override, keyframes):
-    """使用する ASS のパスを決める（--subs 優先、無ければ ZIP 内の subtitles.ass）。"""
+    """Decide which ASS to use (--subs first, otherwise the subtitles.ass in the ZIP)."""
     if subs_override:
         return subs_override
     path = os.path.join(work_dir, "subtitles.ass")
     if not os.path.exists(path):
         raise SystemExit(
-            f"Error: ZIP に subtitles.ass が含まれていません: {keyframes}\n"
-            "       --subs でタイミング付き ASS を指定してください。"
+            f"Error: the ZIP has no subtitles.ass: {keyframes}\n"
+            "       Pass a timed ASS with --subs."
         )
     return path
 
 
 def main():
-    """入力を読み込み、字幕フレームを描画して MP4 を書き出す。"""
-    parser = argparse.ArgumentParser(description="キーフレーム画像に ASS カラオケ字幕を焼き込み、MP4 を生成する。")
-    parser.add_argument("audio", help="BGM として使う音声ファイル (mp3 / wav など)")
-    parser.add_argument("keyframes", help="キーフレーム ZIP（PNG + inputs.txt + subtitles.ass）")
-    parser.add_argument("output", nargs="?", default="output.mp4", help="出力 MP4（既定: output.mp4）")
-    parser.add_argument("--subs", dest="subs_override", help="ZIP 内の字幕を上書きする ASS ファイル")
-    parser.add_argument("--style-file", help="描画スタイルを上書きする JSON ファイル（styles/ にプリセットあり）")
+    """Read the inputs, draw the subtitle frames and write the MP4."""
+    parser = argparse.ArgumentParser(description="Burn ASS karaoke subtitles onto keyframe images and produce an MP4.")
+    parser.add_argument("audio", help="audio used as the soundtrack (mp3 / wav etc.)")
+    parser.add_argument("keyframes", help="keyframe ZIP (PNG + inputs.txt + subtitles.ass)")
+    parser.add_argument("output", nargs="?", default="output.mp4", help="output MP4 (default: output.mp4)")
+    parser.add_argument("--subs", dest="subs_override", help="ASS file that replaces the subtitles in the ZIP")
+    parser.add_argument("--style-file", help="JSON file that overrides the drawing style (presets in styles/)")
     args = parser.parse_args()
 
     require_ffmpeg("ffmpeg")
     if not os.path.exists(args.audio):
-        raise SystemExit(f"Error: 音声ファイルが見つかりません: {args.audio}")
+        raise SystemExit(f"Error: audio file not found: {args.audio}")
     if args.subs_override and not os.path.exists(args.subs_override):
-        raise SystemExit(f"Error: 指定された字幕ファイルが見つかりません: {args.subs_override}")
+        raise SystemExit(f"Error: subtitle file not found: {args.subs_override}")
 
     style_over = load_style_file(args.style_file) if args.style_file else {}
 

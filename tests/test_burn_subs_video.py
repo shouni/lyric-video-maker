@@ -1,4 +1,4 @@
-"""burn_subs_video.py の表示区間計算のテスト。"""
+"""Tests for burn_subs_video.py's display-span calculation."""
 
 import os
 import sys

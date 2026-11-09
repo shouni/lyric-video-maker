@@ -1,4 +1,4 @@
-"""burn_subs.py の純粋関数（描画・ffmpeg を伴わない部分）のテスト。"""
+"""Tests for burn_subs.py's pure functions (no drawing or ffmpeg)."""
 
 import json
 import os
@@ -179,7 +179,7 @@ class TestBuildRenderConfig:
     def test_scales_px_values_from_play_res_y(self, capsys):
         cfg = bs.build_render_config(make_subs(fontsize=64, play_res_y=1080), (1280, 2160), {})
         capsys.readouterr()
-        # 実解像度 2160 / PlayResY 1080 = 2倍
+        # real height 2160 / PlayResY 1080 = 2×
         assert cfg.font.size == 128
         assert cfg.margin_v == 160
         assert cfg.outline == 6
@@ -220,7 +220,7 @@ class TestBuildRenderConfig:
 
 
 class TestLayout:
-    """フォント実測に依存するレイアウト計算（システムフォントが必要）。"""
+    """Layout calculations that measure real fonts (needs a system font)."""
 
     @pytest.fixture
     def draw(self):
@@ -230,7 +230,7 @@ class TestLayout:
     def font(self):
         font = bs.load_font(40)
         if not hasattr(font, "font_variant") or getattr(font, "size", 0) != 40:
-            pytest.skip("スケーラブルなフォントが見つからない環境ではスキップ")
+            pytest.skip("skipped where no scalable font is available")
         return font
 
     def test_measure_line_adds_letter_spacing(self, draw, font):

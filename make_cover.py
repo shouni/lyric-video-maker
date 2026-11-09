@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""MP4のフレームからタイトル入りカバー画像を作成する（既定は先頭、--at で任意の時刻）。
+"""Create titled cover images from an MP4 frame (the first frame by default, any time with --at).
 
-通常YouTube用 (16:9, 1280x720) とショート用 (9:16, 1080x1920) の2枚を出力する。
-ショート用は16:9フレームをぼかし背景の上に重ね、下部にタイトルを配置する。
-フォントは burn_subs.py と同じ探索ロジック（load_font）を利用する。
+Writes two images: regular YouTube (16:9, 1280x720) and Shorts (9:16, 1080x1920).
+The Shorts cover puts the 16:9 frame over a blurred background with the title below it.
+Fonts are found with the same logic as burn_subs.py (load_font).
 
 Usage:
     python3 make_cover.py "/path/to/video_with_lyrics.mp4" --title "Packet Loss" [--at 8]
 
-タイトル省略時はMP4の親フォルダ名を使う。出力は既定でMP4と同じフォルダ。
+Without a title, the MP4's parent folder name is used. Output goes to the MP4's folder by default.
 """
 
 import argparse
@@ -23,22 +23,22 @@ from burn_subs import load_font, require_ffmpeg
 
 DEFAULT_ARTIST = "Digital Armor Style"
 
-# 白タイトル+ダークストローク+シャドウ、アーティスト名は金色
+# white title + dark stroke + shadow; artist name in gold
 TITLE_COLOR = (255, 255, 255)
 ARTIST_COLOR = (255, 215, 0)
 STROKE_COLOR = (26, 26, 26)
 SHADOW_COLOR = (0, 0, 0, 166)
-FONT_SIZE_RATIO = 0.075  # 画像幅に対するタイトルフォントサイズ比
-ARTIST_SIZE_RATIO = 0.55  # タイトルに対するアーティスト名サイズ比
-MAX_WIDTH_RATIO = 0.92  # タイトル1行が占めてよい画像幅の上限比率
-REFERENCE_WIDTH = 1024.0  # ストローク幅・影オフセットの基準画像幅
+FONT_SIZE_RATIO = 0.075  # title font size relative to image width
+ARTIST_SIZE_RATIO = 0.55  # artist name size relative to the title
+MAX_WIDTH_RATIO = 0.92  # widest share of the image a title line may take
+REFERENCE_WIDTH = 1024.0  # reference image width for stroke width and shadow offset
 
 
 def extract_frame(video_path, at_sec=0.0):
-    """ffmpegでMP4の指定秒のフレームをPNGとして抽出し、PIL Imageで返す。
+    """Extract the frame at the given second as PNG with ffmpeg and return it as a PIL Image.
 
-    -ss は入力側ではなく出力側に置く。burn_subs.py の出力は「1フレームが数秒続く」
-    構造でキーフレームが先頭にしかなく、入力側シークでは別のフレームを拾うため。
+    -ss goes on the output side, not the input: burn_subs.py's output holds one frame for seconds and has a
+    keyframe only at the start, so input-side seeking picks a different frame.
     """
     with tempfile.TemporaryDirectory() as tmp:
         frame_path = os.path.join(tmp, "frame.png")
@@ -48,12 +48,12 @@ def extract_frame(video_path, at_sec=0.0):
         cmd += ["-frames:v", "1", "-q:v", "2", frame_path]
         subprocess.run(cmd, check=True)
         if not os.path.exists(frame_path):
-            sys.exit(f"error: {at_sec}秒のフレームを取得できませんでした（動画の長さを超えていませんか）: {video_path}")
+            sys.exit(f"error: could not get the frame at {at_sec} s (is it past the end of the video?): {video_path}")
         return Image.open(frame_path).convert("RGB")
 
 
 def fit_font(draw, text, base_size, max_width):
-    """max_widthに収まる最大フォントサイズ（base_sizeが上限）でフォントを返す。"""
+    """Return the font at the largest size (up to base_size) that fits max_width."""
     size = int(base_size)
     font = load_font(size)
     width = draw.textlength(text, font=font)
@@ -64,7 +64,7 @@ def fit_font(draw, text, base_size, max_width):
 
 
 def draw_styled_text(img, text, center_x, center_y, font, fill, scale):
-    """シャドウ → ストローク付き本文の順でテキストを描画する。"""
+    """Draw text as a shadow, then the stroked text."""
     stroke_w = max(1, round(2 * scale))
     shadow_offset = max(1, round(2 * scale))
 
@@ -82,7 +82,7 @@ def draw_styled_text(img, text, center_x, center_y, font, fill, scale):
 
 
 def draw_title_block(img, title, artist, center_y=None, artist_color=ARTIST_COLOR):
-    """タイトルとアーティスト名を描画する。center_y省略時は下端寄せ。"""
+    """Draw the title and artist name. Without center_y they sit near the bottom."""
     w, h = img.size
     scale = max(1.0, w / REFERENCE_WIDTH)
     draw = ImageDraw.Draw(img)
@@ -105,18 +105,18 @@ def draw_title_block(img, title, artist, center_y=None, artist_color=ARTIST_COLO
 
 
 def parse_hex_color(text):
-    """"8FE3FF" / "#8FE3FF" を RGB のタプルにする。"""
+    """Turn "8FE3FF" / "#8FE3FF" into an RGB tuple."""
     text = text.lstrip("#")
     if len(text) != 6:
-        raise argparse.ArgumentTypeError(f"RRGGBB の 16 進で指定してください: {text}")
+        raise argparse.ArgumentTypeError(f"expected RRGGBB hex: {text}")
     try:
         return tuple(int(text[i:i + 2], 16) for i in (0, 2, 4))
     except ValueError:
-        raise argparse.ArgumentTypeError(f"RRGGBB の 16 進で指定してください: {text}") from None
+        raise argparse.ArgumentTypeError(f"expected RRGGBB hex: {text}") from None
 
 
 def center_crop_to_ratio(img, ratio_w, ratio_h):
-    """指定した縦横比になるよう、画像の中央を切り出す。"""
+    """Crop the centre of the image to the given aspect ratio."""
     w, h = img.size
     target = ratio_w / ratio_h
     if w / h > target:
@@ -129,19 +129,19 @@ def center_crop_to_ratio(img, ratio_w, ratio_h):
 
 
 def make_youtube_cover(frame, title, artist, size=(1280, 720), artist_color=ARTIST_COLOR):
-    """通常YouTube用 16:9 カバー。"""
+    """Regular 16:9 YouTube cover."""
     img = center_crop_to_ratio(frame, 16, 9).resize(size, Image.LANCZOS).convert("RGBA")
     draw_title_block(img, title, artist, artist_color=artist_color)
     return img.convert("RGB")
 
 
 def make_short_cover(frame, title, artist, size=(1080, 1920), artist_color=ARTIST_COLOR):
-    """ショート用 9:16 カバー。ぼかし背景の中央に16:9フレーム、下部にタイトル。"""
+    """9:16 Shorts cover: the 16:9 frame centred on a blurred background, title below."""
     w, h = size
 
     bg = center_crop_to_ratio(frame, w, h).resize(size, Image.LANCZOS)
     bg = bg.filter(ImageFilter.GaussianBlur(40))
-    bg = Image.eval(bg, lambda v: int(v * 0.5))  # 前景とテキストを立たせるため減光
+    bg = Image.eval(bg, lambda v: int(v * 0.5))  # darken so the frame and text stand out
     img = bg.convert("RGBA")
 
     fg_h = round(w * frame.size[1] / frame.size[0])
@@ -149,25 +149,25 @@ def make_short_cover(frame, title, artist, size=(1080, 1920), artist_color=ARTIS
     fg_top = round(h * 0.42) - fg_h // 2
     img.paste(fg, (0, fg_top))
 
-    # テキストはフレーム下端と画像下端の中間に置く
+    # put the text halfway between the frame's bottom and the image's bottom
     text_center = (fg_top + fg_h + h) / 2 - w * FONT_SIZE_RATIO * 0.6
     draw_title_block(img, title, artist, center_y=text_center, artist_color=artist_color)
     return img.convert("RGB")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MP4のフレームからカバー画像を作成する")
-    parser.add_argument("video", help="入力MP4のパス")
-    parser.add_argument("--title", help="タイトル（省略時はMP4の親フォルダ名）")
-    parser.add_argument("--artist", default=DEFAULT_ARTIST, help=f"アーティスト名（既定: {DEFAULT_ARTIST}）")
+    parser = argparse.ArgumentParser(description="Create cover images from an MP4 frame")
+    parser.add_argument("video", help="input MP4 path")
+    parser.add_argument("--title", help="title (default: the MP4's parent folder name)")
+    parser.add_argument("--artist", default=DEFAULT_ARTIST, help=f"artist name (default: {DEFAULT_ARTIST})")
     parser.add_argument(
         "--artist-color", type=parse_hex_color, default=ARTIST_COLOR, metavar="RRGGBB",
-        help="アーティスト名の色（既定: 金 FFD700）",
+        help="artist name colour (default: gold FFD700)",
     )
-    parser.add_argument("--outdir", help="出力フォルダ（省略時はMP4と同じフォルダ）")
+    parser.add_argument("--outdir", help="output folder (default: the MP4's folder)")
     parser.add_argument(
         "--at", type=float, default=0.0, metavar="SEC",
-        help="カバーに使うフレームの時刻（秒、既定: 0＝先頭。先頭が暗転のときに指定する）",
+        help="time of the frame used for the cover (seconds, default: 0 = first frame; set it when the video starts from black)",
     )
     args = parser.parse_args()
 
@@ -176,7 +176,7 @@ def main():
     if not os.path.exists(video_path):
         sys.exit(f"error: video not found: {video_path}")
     if args.at < 0:
-        sys.exit(f"error: --at は0以上で指定してください: {args.at}")
+        sys.exit(f"error: --at must be 0 or more: {args.at}")
 
     title = args.title or os.path.basename(os.path.dirname(video_path))
     outdir = os.path.abspath(args.outdir) if args.outdir else os.path.dirname(video_path)

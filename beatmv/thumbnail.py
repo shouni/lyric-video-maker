@@ -1,9 +1,9 @@
-"""YouTube サムネイルの背景（1280x720）: MV の描画からリング・縦線・波形だけを 1 コマ描く。
+"""YouTube thumbnail background (1280x720): one frame of the video with only the ring, vertical lines and waveform.
 
-歌詞・見出し・タイムラインは入れない。曲名とアーティスト名はここでは描かず、作曲パイプライン
-側でカバーアートと同じタイトルの描き方のまま合成する（カバーアートと同じ見た目にするため）。
+No lyrics, header or timeline. The title and artist name are not drawn here; the composing pipeline adds
+them the same way it titles the cover art, so the thumbnail matches the cover.
 
-キックのリングと打楽器の縦線が両方見える瞬間を、song.toml の [thumbnail] window の中から選ぶ。
+It picks a moment inside song.toml's [thumbnail] window where both the kick ring and the percussion lines show.
 """
 from PIL import Image, ImageDraw
 
@@ -13,7 +13,7 @@ SIZE = (1280, 720)
 
 
 def pick_time(window):
-    """window 内で、キックの 0.10〜0.22 秒後に打楽器が鳴った直後（リングが広がり、縦線が開いている）。"""
+    """Just after a percussion hit 0.10–0.22 s after a kick, inside the window (ring widening, lines open)."""
     lo, hi = window
     for p in r.C.perc:
         if lo < p < hi and any(0.10 < p - k < 0.22 for k in r.C.kick):

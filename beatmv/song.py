@@ -1,10 +1,11 @@
-"""songs/<slug>/song.toml を読む。
+"""Read songs/<slug>/song.toml.
 
-曲ごとに違うのは、曲名・音源・字幕・拍・セクションの時刻・ドラムの振り分け方だけで、描画のコードは
-共有する。時刻はレシピではなく、できた音から取ったもの（Suno はレシピの秒数を守らない）を書く。
+Only the title, audio, lyrics, beats, section times and drum rule differ per song; the drawing code is
+shared. Write times taken from the finished audio, not from the recipe (Suno does not keep the recipe's
+lengths).
 
-パスの解決: song_dir 内のファイル（lyrics / beats）は song_dir 基準、音源と作業ディレクトリは
-リポジトリ基準（~ と絶対パスも可）。音源と生成物はリポジトリに入れない。
+Paths: files inside song_dir (lyrics / beats) are relative to song_dir; the audio and the work directory
+are relative to the repository (~ and absolute paths also work). Audio and outputs stay out of the repo.
 """
 import os
 import tomllib
@@ -33,13 +34,16 @@ class Song:
     sections: List[Tuple[float, str]]
     choruses: List[Tuple[float, float]]
     instrumental: List[Tuple[float, float]]
-    style: str = "karaoke_blue"  # styles/<name>.json（配色。burn_subs と共有）
+    style: str = "karaoke_blue"  # styles/<name>.json (colours, shared with burn_subs)
     credit: str = "Made with Suno"
     fade_in: float = 0.5
     fade_out: float = 2.5
     thumbnail_window: Tuple[float, float] = (0.0, 0.0)
-    bass_band: bool = False  # 波形の下にベースの音量の帯を出す（Demucs の 4 分割が要る）
-    wave: str = "mix"  # 波形の振れ幅の元。mix＝ドラム以外の音、vocals＝声だけ（Demucs の 4 分割が要る）
+    bass_band: bool = False  # show a bass loudness band under the waveform (needs the Demucs 4-stem split)
+    wave: str = "mix"  # waveform source: mix = everything but drums, vocals = voice only (needs the 4-stem split)
+    # translation (a text file in song_dir, one line per subtitle line). When set, it is shown under each line
+    # and the next-line preview is hidden
+    translation: str = ""
 
     def work(self, *parts):
         return os.path.join(self.work_dir, *parts)
@@ -93,4 +97,24 @@ def load(song_dir):
         thumbnail_window=(float(thumb[0]), float(thumb[1])),
         bass_band=bool(d.get("bass_band", False)),
         wave=wave,
+        translation=os.path.join(song_dir, d["translation"]) if d.get("translation") else "",
     )
+
+
+def load_translation(song, n_lines):
+    """Read one translation row per subtitle line. Stop if the counts differ (a one-row offset would give
+    every line another line's translation).
+
+    An empty row means "no translation for this line" (e.g. a repeated fragment such as `Only the pulse`).
+    """
+    if not song.translation:
+        return None
+    with open(song.translation, encoding="utf-8") as f:
+        rows = f.read().split("\n")
+    # Drop only the final newline. Trailing empty rows (lines with no translation, such as English ones) still count
+    if rows and rows[-1] == "":
+        rows.pop()
+    rows = [r.strip() for r in rows]
+    if len(rows) != n_lines:
+        raise ValueError(f"{song.translation}: {len(rows)} translation rows for {n_lines} subtitle lines. Give exactly one row per line")
+    return rows

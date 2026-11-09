@@ -1,11 +1,11 @@
-"""beatmv: 曲の音を解析して、拍と歌詞で動くモーショングラフィックの MV を Pillow で描く。
+"""beatmv: analyse a song's audio and draw a motion-graphics music video, driven by beats and lyrics, with Pillow.
 
-keyframes.zip のスライドショー（burn_subs.py）とは別の作り方で、画像素材を使わない。
-曲ごとの違いは songs/<slug>/song.toml に寄せ、コードは全曲で共有する。
+A different approach from the keyframes.zip slideshow (burn_subs.py): no image assets.
+Per-song differences live in songs/<slug>/song.toml; the code is shared by every song.
 
-    .venv/bin/python -m beatmv analyze songs/<slug>   # ドラム分離 → キック/打楽器の打点・音量
-    .venv/bin/python -m beatmv align songs/<slug>     # Suno と Whisper の時刻合わせから lyrics.ass（hybrid）
-    .venv/bin/python -m beatmv render songs/<slug>    # 4K の MV（--scale 1 で 1080p、--preview 秒,...）
-    .venv/bin/python -m beatmv srt songs/<slug>       # YouTube 字幕（SRT）
-    .venv/bin/python -m beatmv thumb-bg songs/<slug>  # サムネイルの背景（文字なし。曲名は作曲パイプライン側で載せる）
+    .venv/bin/python -m beatmv analyze songs/<slug>   # drum separation → kick/percussion hits and loudness
+    .venv/bin/python -m beatmv align songs/<slug>     # lyrics.ass from Suno's (and Whisper's) alignment
+    .venv/bin/python -m beatmv render songs/<slug>    # 4K video (--scale 1 for 1080p, --preview sec,...)
+    .venv/bin/python -m beatmv srt songs/<slug>       # YouTube subtitles (SRT)
+    .venv/bin/python -m beatmv thumb-bg songs/<slug>  # thumbnail background (no text; the title is added by the composing pipeline)
 """
