@@ -398,14 +398,14 @@ def test_suno_words_become_word_timed_lines():
 
 
 def test_suno_punctuation_is_painted_with_the_word_before_it():
-    # Suno attaches the "!" of "standing!" to the next word. Unless it fills with the word before, it stays white until the next word
+    # Suno attaches the "!" of "ready!" to the next word. Unless it fills with the word before, it stays white until the next word
     from beatmv import suno_align
-    words = [{"word": "Still", "start_s": 73.19, "end_s": 73.52}, {"word": " standing", "start_s": 73.52, "end_s": 74.36},
-             {"word": "! Still", "start_s": 78.64, "end_s": 79.04}, {"word": " standing", "start_s": 79.04, "end_s": 79.68},
+    words = [{"word": "Go", "start_s": 73.19, "end_s": 73.52}, {"word": " ready", "start_s": 73.52, "end_s": 74.36},
+             {"word": "! Go", "start_s": 78.64, "end_s": 79.04}, {"word": " ready", "start_s": 79.04, "end_s": 79.68},
              {"word": "!", "start_s": 79.68, "end_s": 79.7}]
     (_, _, _, segs), = lyrics.load_lines_from(suno_align.words_to_ass(words), "suno")
-    assert [seg[0] for seg in segs if seg[0]] == ["Still", " standing!", " Still", " standing!"]
-    bang = next(seg for seg in segs if seg[0] == " standing!")
+    assert [seg[0] for seg in segs if seg[0]] == ["Go", " ready!", " Go", " ready!"]
+    bang = next(seg for seg in segs if seg[0] == " ready!")
     assert bang[2] == pytest.approx(74.36, abs=0.01)
 
 

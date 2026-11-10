@@ -151,8 +151,8 @@ def words_to_ass(words):
         segs = [s for s in segs if s[0]]
         if not segs:
             continue
-        # Suno attaches a word's trailing punctuation to the next word (`! Still`, `, cold`). Left there,
-        # it fills together with the next word: on New Morning the "!" after "standing" stayed white for
+        # Suno attaches a word's trailing punctuation to the next word (`! Go`, `, cold`). Left there,
+        # it fills together with the next word: the "!" after "ready" stayed white for
         # up to 10 s. Move it back onto the previous word
         for i in range(1, len(segs)):
             m = _LEADING_PUNCT.match(segs[i][0])
