@@ -6,8 +6,10 @@ YouTube serves uploads of 1440p and above as high-bitrate VP9/AV1, so text edges
 Constraints (from feedback on an earlier video): no full-screen flashes, no pulsing brightness, no beat zoom.
 Beats show only as local shapes (kick ring, percussion lines, beat squares, hit timeline).
 
-- In sections without singing (instrumental in song.toml) the title takes the lyric's place; the last one adds the credit.
-- A lyric does not stay until the next line; it fades at most LINE_LINGER s after it is sung (no old line during interludes).
+- In sections without singing (instrumental in song.toml) the title takes the lyric's place;
+  the last one adds the credit.
+- A lyric does not stay until the next line; it fades at most LINE_LINGER s after it is sung
+  (no old line during interludes).
 
 Every worker gets the same settings through configure() (macOS multiprocessing uses spawn, so module state
 is not inherited).
@@ -71,7 +73,8 @@ HOOK_FADE = 0.5    # seconds over which the waveform shifts to hook_color around
 TRANS_FONT = 58    # translation size, 70 % of the lyric (84). 46 was called too small in the video (Only the Pulse)
 TRANS_GAP = 30     # gap from the bottom of the lyric to the translation
 FONT_TRANS = "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc"  # W3 loses its thin strokes once outlined
-GHOST_STAR_R = 11  # ghost-note star radius. 8 was invisible; 14 stood out more than a strong snare's square (radius 7–9)
+# ghost-note star radius. 8 was invisible; 14 stood out more than a strong snare's square (radius 7–9)
+GHOST_STAR_R = 11
 TL_SCALE = 1.3     # timeline scale (hits, labels, row spacing). At 1.0, KICK / SNARE were unreadable at phone size
 SEC_FONT = 36      # section name size in the header. 26 was unreadable on a phone
 TL_SPAN = 2.5      # seconds shown on each side of the playhead in the timeline
@@ -103,7 +106,7 @@ class Ctx:
         with open(song.beats) as f:
             down = json.load(f)["downbeats"]
         beats = []
-        for a, b in zip(down, down[1:]):
+        for a, b in zip(down, down[1:], strict=False):
             n = 8 if b - a > 2.0 else 4  # a bar Suno reported as 8 beats
             beats += [a + (b - a) * k / n for k in range(n)]
         self.beats, self.down = beats, down
@@ -204,15 +207,15 @@ def line_images(i):
     size = px(HOOK_FONT if hook else LYRIC_FONT)
     while True:
         font = font_for(text, "bold", size)
-        l, t, r, b = font.getbbox(text, stroke_width=px(6))
-        if r - l <= C.W - px(200) or size <= px(48):
+        x0, t, r, b = font.getbbox(text, stroke_width=px(6))
+        if r - x0 <= C.W - px(200) or size <= px(48):
             break
         size -= px(4)
-    w, h = r - l + px(8), b - t + px(8)
+    w, h = r - x0 + px(8), b - t + px(8)
     imgs = []
     for color in (C.pal.unsung, C.pal.hook if hook else C.pal.sung):
         im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        ImageDraw.Draw(im).text((px(4) - l, px(4) - t), text, font=font, fill=color,
+        ImageDraw.Draw(im).text((px(4) - x0, px(4) - t), text, font=font, fill=color,
                                 stroke_width=px(6), stroke_fill=C.pal.outline)
         imgs.append(im)
     edges, acc = [], ""
@@ -231,7 +234,8 @@ def draw_dots(d, t):
 
 
 def hook_weight(t):
-    """Weight that is 1 while a hook line is sung and moves to 0 over HOOK_FADE s around it, so the colour shifts slowly instead of flashing."""
+    """Weight that is 1 while a hook line is sung and moves to 0 over HOOK_FADE s around it,
+    so the colour shifts slowly instead of flashing."""
     w = 0.0
     for s, e in C.hook_spans:
         w = max(w, min(1.0, (t - (s - HOOK_FADE)) / HOOK_FADE, ((e + HOOK_FADE) - t) / HOOK_FADE))
@@ -239,12 +243,13 @@ def hook_weight(t):
 
 
 def mix_rgb(a, b, w):
-    return tuple(int(round(x + (y - x) * w)) for x, y in zip(a, b))
+    return tuple(int(round(x + (y - x) * w)) for x, y in zip(a, b, strict=False))
 
 
 def draw_wave(d, t, chorus):
     """The waveform. Its amplitude follows the RMS chosen by song.wave (mix = all but drums, vocals = voice only);
-    its shape is a slowly changing sum of sines (not the real waveform). It leans to hook_color while a hook line is sung."""
+    its shape is a slowly changing sum of sines (not the real waveform).
+    It leans to hook_color while a hook line is sung."""
     px = C.px
     color = mix_rgb(C.pal.accent, C.pal.hook, hook_weight(t))
     fi = min(int(t * FPS), len(C.rms) - 1)
@@ -342,7 +347,8 @@ def draw_timeline(d, t):
                 r = px(7 * k)
                 d.rectangle([x - r, y - r, x + r, y + r], fill=color + (int(60 * edge),),
                             outline=color + (int(190 * edge),), width=px(2))
-    d.line([(C.PLAYHEAD_X, C.TL_Y - px(30 * k)), (C.PLAYHEAD_X, C.TL_Y + px(74 * k))], fill=C.pal.accent + (220,), width=px(3))
+    d.line([(C.PLAYHEAD_X, C.TL_Y - px(30 * k)), (C.PLAYHEAD_X, C.TL_Y + px(74 * k))],
+           fill=C.pal.accent + (220,), width=px(3))
 
 
 def draw_header(d, t):
@@ -438,9 +444,9 @@ def draw_translation(base, i, lyric_bottom, appear):
     while f.getlength(text) > C.W - px(200) and size > px(TRANS_FONT * 0.7):
         size -= px(2)
         f = font_for(text, "semibold", size)
-    l, t, r, b = f.getbbox(text, stroke_width=px(4))
-    im = Image.new("RGBA", (r - l + px(8), b - t + px(8)), (0, 0, 0, 0))
-    ImageDraw.Draw(im).text((px(4) - l, px(4) - t), text, font=f, fill=C.pal.unsung,
+    x0, t, r, b = f.getbbox(text, stroke_width=px(4))
+    im = Image.new("RGBA", (r - x0 + px(8), b - t + px(8)), (0, 0, 0, 0))
+    ImageDraw.Draw(im).text((px(4) - x0, px(4) - t), text, font=f, fill=C.pal.unsung,
                             stroke_width=px(4), stroke_fill=C.pal.outline)
     if appear < 1:
         im.putalpha(im.getchannel("A").point(lambda v: int(v * appear)))

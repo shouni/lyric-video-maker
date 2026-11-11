@@ -13,7 +13,6 @@ import re
 import sys
 import zipfile
 import argparse
-import stable_whisper
 import pysubs2
 
 PUNCT_PATTERN = re.compile(r'[　 、。！？!?,.\s\-\[\]\(\)「」『』〜♪…※☆★●○◎]')
@@ -141,7 +140,7 @@ def map_chars_to_lines(lyric_lines, whisper_chars):
         )
 
     line_char_map = {}
-    for orig, timing in zip(flat_orig, flat_whisper):
+    for orig, timing in zip(flat_orig, flat_whisper, strict=False):
         line_char_map.setdefault(orig["line"], []).append(timing)
     return line_char_map
 
@@ -176,7 +175,7 @@ def build_karaoke_text(plain, char_timings):
 def fill_repeat_gaps(subs):
     """Close the gap between lines up to just before the next line (keeps lyrics on screen during repeats)."""
     text_events = [e for e in subs if plain_text(e.text)]
-    for curr, next_ev in zip(text_events, text_events[1:]):
+    for curr, next_ev in zip(text_events, text_events[1:], strict=False):
         if next_ev.start - curr.end > FILL_GAP_MARGIN_MS:
             curr.end = next_ev.start - FILL_GAP_MARGIN_MS
 
@@ -189,7 +188,7 @@ def trim_overlaps(subs):
     so it is resolved in the ASS itself.
     """
     text_events = [e for e in subs if plain_text(e.text)]
-    for curr, next_ev in zip(text_events, text_events[1:]):
+    for curr, next_ev in zip(text_events, text_events[1:], strict=False):
         # if the next line starts before this one, cutting would make the length 0 or less, so leave it
         if curr.start < next_ev.start < curr.end:
             curr.end = next_ev.start
@@ -248,8 +247,10 @@ def main():
     parser = argparse.ArgumentParser(description="Get karaoke timing from the audio and regenerate the ASS subtitles.")
     parser.add_argument("audio", help="audio to align (mp3 / wav etc.; a separated vocal is more accurate)")
     parser.add_argument("subtitles_in", help="lyrics input (keyframes.zip / subtitles.ass / lyrics.txt)")
-    parser.add_argument("subtitles_out", nargs="?", default="subtitles_aligned.ass", help="output ASS (default: subtitles_aligned.ass)")
-    parser.add_argument("--model", default="large-v3", help="Whisper model size (base / small / medium / large-v3, default: large-v3)")
+    parser.add_argument("subtitles_out", nargs="?", default="subtitles_aligned.ass",
+                        help="output ASS (default: subtitles_aligned.ass)")
+    parser.add_argument("--model", default="large-v3",
+                        help="Whisper model size (base / small / medium / large-v3, default: large-v3)")
     parser.add_argument("--language", default="ja", help="language code of the lyrics for Whisper (default: ja)")
     args = parser.parse_args()
 
@@ -263,6 +264,10 @@ def main():
     lyric_lines = extract_lyric_lines(subs_orig)
     if not lyric_lines:
         raise SystemExit(f"Error: no lyric lines: {args.subtitles_in}")
+
+    # Imported here, not at the top: stable-ts pulls in torch, and the tests import this module
+    # for its pure text helpers without needing a model.
+    import stable_whisper
 
     print("Loading the Whisper model...")
     model = stable_whisper.load_model(args.model)

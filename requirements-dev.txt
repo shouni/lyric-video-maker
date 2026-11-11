@@ -1,3 +1,4 @@
-# development (needed to run the tests)
+# development (needed to run the tests and the lint)
 -r requirements.txt
 pytest>=8.0
+ruff==0.17.4

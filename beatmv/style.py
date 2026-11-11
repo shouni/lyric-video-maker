@@ -10,7 +10,7 @@ layout, and the style's values would break it).
 | outline_color | outline | outline and the bottom of the background gradient |
 | accent_color | (unused) | ring, waveform, dots, grid, beat squares, timeline, title. Defaults to primary_color |
 | background_top | (unused) | top of the background gradient |
-| hook_color | (unused) | sung colour of hook lines (lyrics.is_hook_line). Defaults to cyan (as the artist name on covers) |
+| hook_color | (unused) | sung colour of hook lines (lyrics.is_hook_line). Default: cyan, as on covers |
 
 burn_subs.load_style_file passes unknown keys through silently, so beatmv-only keys do not change burn_subs.
 """
@@ -52,7 +52,9 @@ def style_path(name):
 
 
 def load(name):
-    """Read the colours in styles/<name>.json. Invalid colours are errors, not warnings, so a video's palette never changes silently."""
+    """Read the colours in styles/<name>.json.
+
+    Invalid colours are errors, not warnings, so a video's palette never changes silently."""
     path = style_path(name)
     with open(path, encoding="utf-8") as f:
         d = json.load(f)

@@ -382,7 +382,7 @@ def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
     y = img_h - block_h - cfg.margin_v
 
     idx = 0
-    for line, txt, bbox in zip(seg_lines, line_texts, line_bboxes):
+    for line, _txt, bbox in zip(seg_lines, line_texts, line_bboxes, strict=False):
         total_w = bbox[2] - bbox[0]
         cur_x = (img_w - total_w) // 2
         for _s, _e, seg_text in line:

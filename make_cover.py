@@ -167,7 +167,8 @@ def main():
     parser.add_argument("--outdir", help="output folder (default: the MP4's folder)")
     parser.add_argument(
         "--at", type=float, default=0.0, metavar="SEC",
-        help="time of the frame used for the cover (seconds, default: 0 = first frame; set it when the video starts from black)",
+        help="time of the frame used for the cover "
+        "(seconds, default: 0 = first frame; set it when the video starts from black)",
     )
     args = parser.parse_args()
 

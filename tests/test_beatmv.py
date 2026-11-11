@@ -49,7 +49,8 @@ def test_fixture_song_loads():
     assert s.title and s.duration > 0
     assert s.sections[0][0] == 0.0, "the first section starts at 0 s (otherwise the header is empty)"
     assert [t for t, _ in s.sections] == sorted(t for t, _ in s.sections)
-    assert s.instrumental[-1][1] == pytest.approx(s.duration), "the last section without singing runs to the end (shows the credit)"
+    assert s.instrumental[-1][1] == pytest.approx(s.duration), \
+        "the last section without singing runs to the end (shows the credit)"
     lo, hi = s.thumbnail_window
     assert 0 <= lo < hi <= s.duration
 
@@ -101,7 +102,8 @@ def test_edm_rule_keeps_kicks_whose_attack_reaches_the_mids():
 
 
 def test_trance_rule_does_not_count_a_kick_as_perc():
-    # with edm the kick's attack also met the percussion condition, so hits showed in both rows (131 / 258 on 夜明けの境界線)
+    # with edm the kick's attack also met the percussion condition,
+    # so hits showed in both rows (131 / 258 on 夜明けの境界線)
     t = np.array([1.0, 2.0, 3.0])
     lr = np.array([3.2, 2.4, -0.9])  # 1, 2: kicks / 3: off-beat hat
     mr = np.array([3.4, 4.8, 1.3])
@@ -272,7 +274,8 @@ def suno_word(word, start, end):
     return {"word": word, "start_s": start, "end_s": end, "success": True, "p_align": 1}
 
 
-# shape of Suno's audio-lyrics-alignment: a newline at the start of a word breaks the line; section tags are mixed into words
+# shape of Suno's audio-lyrics-alignment: a newline at the start of a word breaks the line;
+# section tags are mixed into words
 SUNO_WORDS = [
     suno_word("[Intro: instrumental only]\n\n\n[Verse: sparse breakbeat]\nカ", 16.46, 16.65),
     suno_word("ケル", 16.65, 19.37),
@@ -285,12 +288,14 @@ SUNO_WORDS = [
 def test_suno_line_spans_follow_newlines_and_ignore_tags():
     from beatmv import suno_align
     spans = suno_align.line_spans(SUNO_WORDS)
-    assert spans == [(16.46, 19.37), (58.90, 61.00)], "no line break after a tag; the last word stays in the previous line"
+    assert spans == [(16.46, 19.37), (58.90, 61.00)], \
+        "no line break after a tag; the last word stays in the previous line"
 
 
 def test_hybrid_keeps_whisper_shares_inside_the_suno_span(tmp_path):
     from beatmv import suno_align
-    # Whisper: line 1's first character is 2 s (the previous line's tail); line 2's last character runs 3 s into the interlude
+    # Whisper: line 1's first character is 2 s (the previous line's tail);
+    # line 2's last character runs 3 s into the interlude
     ass = write_ass(tmp_path / "w.ass", [
         (14000, 18300, r"{\k200}駆{\k150}け{\k80}る"),
         (57000, 62000, r"{\k50}Over{\k150}clock{\k300}!"),
@@ -373,7 +378,7 @@ def test_mix_rgb_blends_between_two_colors():
     assert render.mix_rgb((0, 0, 0), (100, 200, 50), 0.5) == (50, 100, 25)
 
 
-# --------------------------------------------------------------------------- English subtitles (Suno only) and translations
+# ----------------------------------------------------- English subtitles (Suno only) and translations
 
 ENGLISH_WORDS = [
     suno_word("[Verse: light breaks]\nStatic", 34.689, 35.334),
@@ -398,7 +403,8 @@ def test_suno_words_become_word_timed_lines():
 
 
 def test_suno_punctuation_is_painted_with_the_word_before_it():
-    # Suno attaches the "!" of "ready!" to the next word. Unless it fills with the word before, it stays white until the next word
+    # Suno attaches the "!" of "ready!" to the next word.
+    # Unless it fills with the word before, it stays white until the next word
     from beatmv import suno_align
     words = [{"word": "Go", "start_s": 73.19, "end_s": 73.52}, {"word": " ready", "start_s": 73.52, "end_s": 74.36},
              {"word": "! Go", "start_s": 78.64, "end_s": 79.04}, {"word": " ready", "start_s": 79.04, "end_s": 79.68},
@@ -416,14 +422,16 @@ def write_translation_song(tmp_path, rows):
 
 def test_translation_needs_one_row_per_line(tmp_path):
     s = write_translation_song(tmp_path, ["ノイズが消えた", "", "色が光る"])
-    assert songmod.load_translation(s, 3) == ["ノイズが消えた", "", "色が光る"], "an empty row means no translation for that line"
+    assert songmod.load_translation(s, 3) == ["ノイズが消えた", "", "色が光る"], \
+        "an empty row means no translation for that line"
     with pytest.raises(ValueError, match="one row per line"):
         songmod.load_translation(s, 2)
 
 
 def test_trailing_blank_rows_still_count(tmp_path):
     s = write_translation_song(tmp_path, ["Charge ahead", "", ""])
-    assert songmod.load_translation(s, 3) == ["Charge ahead", "", ""], "the count holds even when the last lines are English"
+    assert songmod.load_translation(s, 3) == ["Charge ahead", "", ""], \
+        "the count holds even when the last lines are English"
 
 
 def test_translation_is_off_unless_asked(tmp_path):
