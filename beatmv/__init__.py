@@ -7,5 +7,6 @@ Per-song differences live in songs/<slug>/song.toml; the code is shared by every
     .venv/bin/python -m beatmv align songs/<slug>     # lyrics.ass from Suno's (and Whisper's) alignment
     .venv/bin/python -m beatmv render songs/<slug>    # 4K video (--scale 1 for 1080p, --preview sec,...)
     .venv/bin/python -m beatmv srt songs/<slug>       # YouTube subtitles (SRT)
-    .venv/bin/python -m beatmv thumb-bg songs/<slug>  # thumbnail background (no text; the title is added by the composing pipeline)
+    .venv/bin/python -m beatmv thumb-bg songs/<slug>  # thumbnail background (no text;
+                                                      # the title is added by the composing pipeline)
 """

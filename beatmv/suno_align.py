@@ -100,7 +100,7 @@ def merge(whisper_ass, words):
             "One of them dropped a line, or the lyrics file differs from what was sung")
 
     warnings = []
-    for n, (event, span) in enumerate(zip(subs, spans), 1):
+    for n, (event, span) in enumerate(zip(subs, spans, strict=False), 1):
         t0 = event.start / 1000
         segs = [(txt, t0 + a / 100, t0 + b / 100) for a, b, txt in burn_subs.parse_karaoke(event.text)]
         if not segs:

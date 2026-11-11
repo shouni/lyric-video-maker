@@ -10,7 +10,6 @@ are relative to the repository (~ and absolute paths also work). Audio and outpu
 import os
 import tomllib
 from dataclasses import dataclass
-from typing import List, Tuple
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -31,14 +30,14 @@ class Song:
     beats: str
     drum_rule: str
     perc_label: str
-    sections: List[Tuple[float, str]]
-    choruses: List[Tuple[float, float]]
-    instrumental: List[Tuple[float, float]]
+    sections: list[tuple[float, str]]
+    choruses: list[tuple[float, float]]
+    instrumental: list[tuple[float, float]]
     style: str = "karaoke_blue"  # styles/<name>.json (colours, shared with burn_subs)
     credit: str = "Made with Suno"
     fade_in: float = 0.5
     fade_out: float = 2.5
-    thumbnail_window: Tuple[float, float] = (0.0, 0.0)
+    thumbnail_window: tuple[float, float] = (0.0, 0.0)
     bass_band: bool = False  # show a bass loudness band under the waveform (needs the Demucs 4-stem split)
     wave: str = "mix"  # waveform source: mix = everything but drums, vocals = voice only (needs the 4-stem split)
     # translation (a text file in song_dir, one line per subtitle line). When set, it is shown under each line
@@ -116,5 +115,6 @@ def load_translation(song, n_lines):
         rows.pop()
     rows = [r.strip() for r in rows]
     if len(rows) != n_lines:
-        raise ValueError(f"{song.translation}: {len(rows)} translation rows for {n_lines} subtitle lines. Give exactly one row per line")
+        raise ValueError(f"{song.translation}: {len(rows)} translation rows for {n_lines} subtitle lines. "
+                         "Give exactly one row per line")
     return rows

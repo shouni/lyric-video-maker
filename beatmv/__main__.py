@@ -8,7 +8,8 @@ def main():
     ap = argparse.ArgumentParser(prog="beatmv")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    a = sub.add_parser("analyze", help="separate the drums and write kick/percussion hits and the loudness for the waveform")
+    a = sub.add_parser("analyze",
+                       help="separate the drums and write kick/percussion hits and the loudness for the waveform")
     a.add_argument("song_dir")
 
     r = sub.add_parser("render", help="render the video (4K by default)")
@@ -22,7 +23,8 @@ def main():
     t = sub.add_parser("thumb-bg", help="write the thumbnail background (1280x720, no text)")
     t.add_argument("song_dir")
 
-    al = sub.add_parser("align", help="write lyrics.ass: suno uses Suno's alignment only, hybrid combines it with Whisper")
+    al = sub.add_parser("align",
+                        help="write lyrics.ass: suno uses Suno's alignment only, hybrid combines it with Whisper")
     al.add_argument("song_dir")
     al.add_argument("--whisper", help="output of align_subtitles.py (default: work/<slug>/lyrics.whisper.ass)")
     al.add_argument("--suno", help="Suno's alignment JSON (default: work/<slug>/suno_alignment.json)")
@@ -46,7 +48,7 @@ def main():
         trans = songmod.load_translation(song, len(lines))
         if trans is not None:
             out = song.work(f"{song.slug}.ja.srt")
-            subs = lyrics.to_srt([(tr or text, *rest) for tr, (text, *rest) in zip(trans, lines)], out)
+            subs = lyrics.to_srt([(tr or text, *rest) for tr, (text, *rest) in zip(trans, lines, strict=False)], out)
             print(f"{out}  {len(subs)} lines (translation)")
     elif args.cmd == "align" and song.lyrics_aligner == "suno":
         subs = suno_align.words_to_ass(suno_align.load_words(args.suno or song.work("suno_alignment.json")))

@@ -15,9 +15,12 @@ Only the pure logic that does not call ffmpeg/Whisper is covered by pytest (`tes
 
 ```bash
 .venv/bin/python -m pytest tests -q
+.venv/bin/ruff check .   # lint (settings in pyproject.toml; CI runs both)
 ```
 
-Dependencies are installed in `.venv` (Python 3.14; beatmv uses `tomllib`, so 3.11+ is required). **Always run with `.venv/bin/python`.** The system python3 has no pysubs2 / stable-ts. ffmpeg is a system install (brew).
+CI (`.github/workflows/ci.yml`) runs the tests on macOS, because the rendering tests draw with Hiragino and Helvetica Neue, with only pysubs2 / pillow / numpy / pytest installed. Keep heavy imports (torch, librosa, stable-ts) inside the functions that need them, or CI has to install them just to import a module.
+
+Dependencies are installed in `.venv` (Python 3.14). **Python 3.12+ is required**: the pinned numpy and pysubs2 need it (beatmv's `tomllib` alone would allow 3.11). **Always run with `.venv/bin/python`.** The system python3 has no pysubs2 / stable-ts. ffmpeg is a system install (brew).
 
 ```bash
 # ① lyric alignment: audio + lyrics → ASS with karaoke timing
