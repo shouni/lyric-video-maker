@@ -1,10 +1,11 @@
 # ✨ Lyric Video Maker
 
+[![CI](https://github.com/shouni/lyric-video-maker/actions/workflows/ci.yml/badge.svg)](https://github.com/shouni/lyric-video-maker/actions/workflows/ci.yml)
+[![Status](https://img.shields.io/badge/Status-Active-brightgreen)](#)
 [![Language](https://img.shields.io/badge/Language-Python-blue)](https://www.python.org/)
 [![Python Version](https://img.shields.io/badge/Python-3.12%2B-blue)](https://www.python.org/)
+[![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/shouni/lyric-video-maker)](https://github.com/shouni/lyric-video-maker/tags)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Status](https://img.shields.io/badge/Status-Active-brightgreen)](#)
-[![CI](https://github.com/shouni/lyric-video-maker/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/shouni/lyric-video-maker/actions/workflows/ci.yml)
 
 [English](README.md) | 日本語
 
