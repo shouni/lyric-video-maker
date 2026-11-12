@@ -29,6 +29,7 @@ def main():
 
     t = sub.add_parser("thumb-bg", help="write the thumbnail background (1280x720, no text)")
     t.add_argument("song_dir")
+    t.add_argument("--portrait", action="store_true", help="the Short's cover instead (1080x1920)")
 
     al = sub.add_parser("align",
                         help="write lyrics.ass: suno uses Suno's alignment only, hybrid combines it with Whisper")
@@ -86,8 +87,8 @@ def main():
         if song.lyrics_aligner != "hybrid":
             print(f'  set lyrics_aligner to "hybrid" in song.toml (it is {song.lyrics_aligner!r})')
     elif args.cmd == "thumb-bg":
-        out = song.work("thumb_bg.png")
-        at = thumbnail.background(args.song_dir, out)
+        out = song.work("thumb_bg_portrait.png" if args.portrait else "thumb_bg.png")
+        at = thumbnail.background(args.song_dir, out, args.portrait)
         print(f"{out}  t={at:.2f}")
 
 

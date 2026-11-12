@@ -253,6 +253,7 @@ songs/<slug>/
 .venv/bin/python -m beatmv render   songs/<slug> --portrait --from 132 --to 198.2   # a Short: 1080x1920, only that span
 .venv/bin/python -m beatmv srt      songs/<slug>   # YouTube subtitles (SRT)
 .venv/bin/python -m beatmv thumb-bg songs/<slug>   # thumbnail background (no text; the title is added by my own composing pipeline)
+.venv/bin/python -m beatmv thumb-bg songs/<slug> --portrait   # the Short's cover background (1080x1920, same moment as the thumbnail)
 ```
 
 - **`--portrait` draws the same song in 9:16 for Shorts** (1080x1920 by default, `--scale 2` for 2160x3840). The header sits below the Shorts top bar and the timeline above the bottom UI. A lyric or translation that is still too wide at the smallest text size wraps into two rows (between words for English), and the rows fill one after the other. If the lyric and its translation together would reach the timeline, the block moves up by what would overlap.
