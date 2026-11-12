@@ -253,6 +253,7 @@ songs/<slug>/
 .venv/bin/python -m beatmv render   songs/<slug> --portrait --from 132 --to 198.2   # ショート: 1080x1920、その区間だけ
 .venv/bin/python -m beatmv srt      songs/<slug>   # YouTube 字幕（SRT）
 .venv/bin/python -m beatmv thumb-bg songs/<slug>   # サムネイルの背景（文字なし。曲名は自作の作曲パイプラインで載せる）
+.venv/bin/python -m beatmv thumb-bg songs/<slug> --portrait   # ショートのサムネイルの背景（1080x1920、横のサムネイルと同じ瞬間）
 ```
 
 - **`--portrait` で同じ曲を 9:16（ショート用）に描く**（既定 1080x1920、`--scale 2` で 2160x3840）。ヘッダーはショートの上部バーより下、タイムラインは下部 UI より上に置きます。最小の文字サイズでも幅に収まらない歌詞や訳は2行に折り返し（英語は単語の間で）、上の行から順に塗られます。歌詞と訳を合わせた高さがタイムラインに届く場合は、重なる分だけ全体を上へずらします。

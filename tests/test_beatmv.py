@@ -672,3 +672,18 @@ def test_fixture_lines_are_not_moved_by_the_timeline_limit(tmp_path):
         for i in range(len(C.lines)):
             height = sum(row[0].height for row in render.line_images(i))
             assert C.LYRIC_Y + height // 2 < C.TEXT_FLOOR
+
+
+# --------------------------------------------------------------------------- thumbnail backgrounds
+
+@pytest.mark.parametrize("portrait,size", [(False, (1280, 720)), (True, (1080, 1920))])
+def test_thumbnail_background_sizes(tmp_path, portrait, size):
+    from PIL import Image
+
+    from beatmv import thumbnail
+
+    out = tmp_path / "bg.png"
+    t = thumbnail.background(fixture_song(tmp_path), str(out), portrait)
+    assert Image.open(out).size == size
+    # the made-up hits have no snare 0.10-0.22 s after a kick, so both layouts take the middle of the window
+    assert t == pytest.approx(8.0)
