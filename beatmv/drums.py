@@ -74,6 +74,57 @@ def dnb_split(t, lr, mr):
     return t[is_kick], t[strong], t[cand & ~strong]
 
 
+# A run of kicks this close together (eighth notes at the song's tempo, with slack) and at least this long is
+# listed as a possible snare roll. The detector calls a roll's hits kicks when their low band rises more than
+# the mids, from almost nothing. No measured feature told rolls from real kick runs with any margin (five runs
+# judged by ear on 2026-11-12: Power On's 126 s roll scored like the real kick runs of Only the Pulse and
+# Beyond the Firewall), so the runs are only listed, and the ones heard as rolls go in song.toml's snare_rolls.
+ROLL_GAP_EIGHTHS = 1.15
+ROLL_MIN_HITS = 6
+
+
+def bar_seconds(beats_path):
+    """Median bar length from beats.json's downbeats."""
+    with open(beats_path) as f:
+        down = json.load(f)["downbeats"]
+    return float(np.median(np.diff(down)))
+
+
+def kick_runs(kicks, bar):
+    """Runs of at least ROLL_MIN_HITS kicks an eighth note apart, as (start s, end s, hits)."""
+    gap = bar / 8 * ROLL_GAP_EIGHTHS
+    runs, cur = [], list(kicks[:1])
+    for a, b in zip(kicks, kicks[1:], strict=False):
+        if b - a < gap:
+            cur.append(b)
+            continue
+        if len(cur) >= ROLL_MIN_HITS:
+            runs.append((cur[0], cur[-1], len(cur)))
+        cur = [b]
+    if len(cur) >= ROLL_MIN_HITS:
+        runs.append((cur[0], cur[-1], len(cur)))
+    return runs
+
+
+def apply_snare_rolls(kick, perc, rolls):
+    """Move the kicks inside the snare_rolls spans to the percussion row. Returns (kick, perc), both sorted."""
+    inside = [k for k in kick if any(a <= k <= b for a, b in rolls)]
+    if not inside:
+        return list(kick), list(perc)
+    return [k for k in kick if k not in inside], sorted(list(perc) + inside)
+
+
+def print_roll_candidates(song, kicks):
+    """List kick runs that might be snare rolls, marking the ones song.toml already declares."""
+    runs = kick_runs(kicks, bar_seconds(song.beats))
+    if not runs:
+        return
+    print("kick runs an eighth note apart (listen to the drum stem; add snare rolls to snare_rolls in song.toml):")
+    for a, b, n in runs:
+        done = any(x <= a and b <= y for x, y in song.snare_rolls)
+        print(f"  {a:7.2f}–{b:7.2f}  {n:2d} hits{'  (in snare_rolls)' if done else ''}")
+
+
 def stem_dir(song):
     stem = os.path.splitext(os.path.basename(song.audio))[0]
     return song.work("sep", "htdemucs", stem)
@@ -201,3 +252,4 @@ def analyze(song):
     if song.wave == "vocals":
         write_vocal_rms(song)
     print(f"kick {len(kick)}  {song.perc_label.lower()} {len(perc)}  ({song.drum_rule})")
+    print_roll_candidates(song, out["kick"])

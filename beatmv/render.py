@@ -29,6 +29,7 @@ from multiprocessing import Pool
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from beatmv import drums
 from beatmv import lyrics as lyr
 from beatmv import song as songmod
 from beatmv import style as stylemod
@@ -195,7 +196,8 @@ class Ctx:
         self.beats, self.down = beats, down
         with open(song.work("drums.json")) as f:
             d = json.load(f)
-        self.kick, self.perc = d["kick"], d["snare"]
+        # drums.json keeps what the detector found; the rolls confirmed by ear are moved at drawing time
+        self.kick, self.perc = drums.apply_snare_rolls(d["kick"], d["snare"], song.snare_rolls)
         self.ghost = d.get("ghost", [])  # dnb ghost notes and hats (only drawn small on the timeline)
         self.rms = np.load(song.work("vocal_rms.npy" if song.wave == "vocals" else "rms.npy"))
         self.bass_rms = np.load(song.work("bass_rms.npy")) if song.bass_band else None
@@ -740,12 +742,15 @@ def render_video(song_dir, scale, portrait=False, clip=None):
         seek = ["-ss", f"{t0}"]
         if t0 > 0:  # a clip cut out of the middle also fades in, to hide the cut
             afade = f"afade=t=in:d={C.fade_in},{afade}"
+    # The output is cut with -t at the audio length, not -shortest. When the length is not a whole number of
+    # frames (Power On, 263.16 s = 7894.8 frames), -shortest dropped the last 3 frames whether the video was
+    # one frame longer or shorter than the audio; -t keeps all of them and the audio at its exact length.
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-i", silent,
          *seek, "-t", f"{dur}", "-i", song.audio,
          "-map", "0:v", "-map", "1:a",
          "-af", afade,
-         "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-shortest", out],
+         "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-t", f"{dur}", out],
         check=True,
     )
     return out

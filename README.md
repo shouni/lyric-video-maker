@@ -252,6 +252,7 @@ songs/<slug>/
 .venv/bin/python -m beatmv render   songs/<slug>   # the video (4K by default; --scale 1 for 1080p, --preview 45,100 for stills; --preview cannot be combined with --from / --to)
 .venv/bin/python -m beatmv render   songs/<slug> --portrait --from 132 --to 198.2   # a Short: 1080x1920, only that span
 .venv/bin/python -m beatmv srt      songs/<slug>   # YouTube subtitles (SRT)
+.venv/bin/python -m beatmv rolls    songs/<slug>   # kick runs that may be snare rolls (put the ones you hear as rolls in snare_rolls)
 .venv/bin/python -m beatmv thumb-bg songs/<slug>   # thumbnail background (no text; the title is added by my own composing pipeline)
 .venv/bin/python -m beatmv thumb-bg songs/<slug> --portrait   # the Short's cover background (1080x1920, same moment as the thumbnail)
 ```

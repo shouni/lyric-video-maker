@@ -43,6 +43,9 @@ class Song:
     # translation (a text file in song_dir, one line per subtitle line). When set, it is shown under each line
     # and the next-line preview is hidden
     translation: str = ""
+    # spans (start s, end s) confirmed by ear as snare rolls: kicks detected inside them are drawn on the
+    # percussion row. Candidates come from `beatmv rolls` (or analyze); see drums.kick_runs
+    snare_rolls: list[tuple[float, float]] = ()
 
     def work(self, *parts):
         return os.path.join(self.work_dir, *parts)
@@ -74,6 +77,10 @@ def load(song_dir):
         raise ValueError(f"style not found: styles/{style}.json")
 
     duration = float(d["duration"])
+    snare_rolls = [(float(a), float(b)) for a, b in d.get("snare_rolls", [])]
+    for a, b in snare_rolls:
+        if not 0 <= a < b <= duration:
+            raise ValueError(f"snare_rolls: each span must satisfy 0 <= start < end <= {duration}: [{a}, {b}]")
     thumb = d.get("thumbnail", {}).get("window", [0.0, duration])
     return Song(
         slug=os.path.basename(song_dir),
@@ -97,6 +104,7 @@ def load(song_dir):
         bass_band=bool(d.get("bass_band", False)),
         wave=wave,
         translation=os.path.join(song_dir, d["translation"]) if d.get("translation") else "",
+        snare_rolls=snare_rolls,
     )
 
 
