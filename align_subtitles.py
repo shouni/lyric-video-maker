@@ -100,9 +100,9 @@ def load_source_subs(path):
     """Load the lyrics input (keyframes.zip / ASS / plain text) and return an SSAFile."""
     if not os.path.exists(path):
         raise SystemExit(f"Error: lyrics input not found: {path}")
-    if path.endswith(".txt"):
+    if path.lower().endswith(".txt"):
         return subs_from_txt(path)
-    if path.endswith(".zip"):
+    if path.lower().endswith(".zip"):
         with zipfile.ZipFile(path) as zf:
             names = zf.namelist()
             if "subtitles.ass" not in names:
@@ -117,6 +117,29 @@ def load_source_subs(path):
 def extract_lyric_lines(subs):
     """Take the lyric lines of events that have text, in order."""
     return [plain for plain in (plain_text(e.text) for e in subs) if plain]
+
+
+def describe_mismatch(lyric_lines, flat_orig, flat_whisper):
+    """Say where the lyrics and the detected characters part ways, as a line number and the text around it.
+
+    The totals alone ("orig=412, whisper=398") leave the whole lyric to search. Whisper returns the lyric
+    text it was given, so the first character that differs is where it dropped or changed something:
+    usually an ad-lib, a repeat that was not sung, or a line missing from the audio.
+    """
+    def context(flat, i):
+        return "".join(c["char"] for c in flat[max(0, i - 5):i + 5])
+
+    n = min(len(flat_orig), len(flat_whisper))
+    i = next((k for k in range(n) if flat_orig[k]["char"].casefold() != flat_whisper[k]["char"].casefold()), n)
+    if i < len(flat_orig):
+        line = flat_orig[i]["line"]
+        where = f"line {line + 1} ({lyric_lines[line]})"
+        if i < len(flat_whisper):
+            return (f"first difference at {where}: the lyrics have '{context(flat_orig, i)}' "
+                    f"where the audio gave '{context(flat_whisper, i)}' (around {flat_whisper[i]['start']:.1f}s)")
+        return f"the audio ran out at {where}: nothing was detected from '{context(flat_orig, i)}' on"
+    return (f"the audio has {len(flat_whisper) - i} more characters after the last lyric line: "
+            f"'{context(flat_whisper, i)}' (around {flat_whisper[i]['start']:.1f}s)")
 
 
 def map_chars_to_lines(lyric_lines, whisper_chars):
@@ -136,7 +159,8 @@ def map_chars_to_lines(lyric_lines, whisper_chars):
     if len(flat_orig) != len(flat_whisper):
         raise ValueError(
             f"character counts differ (orig={len(flat_orig)}, whisper={len(flat_whisper)}). "
-            "Stopping the alignment, because every timing after this would shift."
+            "Stopping the alignment, because every timing after this would shift.\n"
+            f"  {describe_mismatch(lyric_lines, flat_orig, flat_whisper)}"
         )
 
     line_char_map = {}
@@ -243,7 +267,7 @@ def build_aligned_subs(subs_orig, line_char_map, verbose=True):
 
 
 def main():
-    """Align the lyric text to the audio and write an ASS with \\k tags."""
+    """Parse the command line and run align()."""
     parser = argparse.ArgumentParser(description="Get karaoke timing from the audio and regenerate the ASS subtitles.")
     parser.add_argument("audio", help="audio to align (mp3 / wav etc.; a separated vocal is more accurate)")
     parser.add_argument("subtitles_in", help="lyrics input (keyframes.zip / subtitles.ass / lyrics.txt)")
@@ -253,27 +277,31 @@ def main():
                         help="Whisper model size (base / small / medium / large-v3, default: large-v3)")
     parser.add_argument("--language", default="ja", help="language code of the lyrics for Whisper (default: ja)")
     args = parser.parse_args()
+    align(args.audio, args.subtitles_in, args.subtitles_out, model=args.model, language=args.language)
 
-    audio = args.audio
-    ass_out = args.subtitles_out
 
+def align(audio, subtitles_in, ass_out, model="large-v3", language="ja"):
+    """Align the lyrics in subtitles_in to the audio and write ass_out (what the command line runs).
+
+    A function so that `python -m beatmv align` can run this step itself when lyrics.whisper.ass is missing.
+    """
     if not os.path.exists(audio):
         raise SystemExit(f"Error: audio file not found: {audio}")
 
-    subs_orig = load_source_subs(args.subtitles_in)
+    subs_orig = load_source_subs(subtitles_in)
     lyric_lines = extract_lyric_lines(subs_orig)
     if not lyric_lines:
-        raise SystemExit(f"Error: no lyric lines: {args.subtitles_in}")
+        raise SystemExit(f"Error: no lyric lines: {subtitles_in}")
 
     # Imported here, not at the top: stable-ts pulls in torch, and the tests import this module
     # for its pure text helpers without needing a model.
     import stable_whisper
 
     print("Loading the Whisper model...")
-    model = stable_whisper.load_model(args.model)
+    whisper = stable_whisper.load_model(model)
 
     print("Aligning...")
-    result = model.align(audio, "\n".join(lyric_lines), language=args.language)
+    result = whisper.align(audio, "\n".join(lyric_lines), language=language)
 
     # result.adjust_by_silence(audio, vad=True) corrects timing using silence, but a music track with backing
     # has no silence to find, so it does more harm than good and is not used.

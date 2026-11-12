@@ -101,6 +101,30 @@ class TestMapCharsToLines:
         with pytest.raises(ValueError, match="character counts differ"):
             al.map_chars_to_lines(["あいう"], chars(("あ", 0.0, 0.5), ("い", 0.5, 1.0)))
 
+    def test_mismatch_names_the_line_where_the_audio_skipped_text(self):
+        # the second line's "え" was not sung: everything from there on would shift
+        lines = ["あい", "うえお", "かき"]
+        whisper = chars(("あ", 0.0, 0.5), ("い", 0.5, 1.0), ("う", 1.0, 1.5), ("お", 2.0, 2.5),
+                        ("か", 3.0, 3.5), ("き", 3.5, 4.0))
+        with pytest.raises(ValueError, match=r"first difference at line 2 \(うえお\).*around 2\.0s"):
+            al.map_chars_to_lines(lines, whisper)
+
+    def test_mismatch_names_the_line_where_the_audio_ran_out(self):
+        whisper = chars(("あ", 0.0, 0.5), ("い", 0.5, 1.0), ("う", 1.0, 1.5))
+        with pytest.raises(ValueError, match=r"the audio ran out at line 2 \(うえ\)"):
+            al.map_chars_to_lines(["あい", "うえ"], whisper)
+
+    def test_mismatch_reports_characters_after_the_last_line(self):
+        whisper = chars(("あ", 0.0, 0.5), ("い", 0.5, 1.0), ("う", 7.0, 7.5))
+        with pytest.raises(ValueError, match=r"1 more characters after the last lyric line.*around 7\.0s"):
+            al.map_chars_to_lines(["あい"], whisper)
+
+    def test_latin_case_is_not_a_difference(self):
+        # the line it names is the one with the missing word, not the first one whose case differs
+        whisper = chars(("g", 0.0, 0.5), ("o", 0.5, 1.0), ("u", 1.0, 1.5))
+        with pytest.raises(ValueError, match=r"first difference at line 2 \(now\)"):
+            al.map_chars_to_lines(["GO", "now"], whisper)
+
 
 class TestBuildKaraokeText:
     def test_assigns_k_tags_from_durations(self):

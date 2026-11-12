@@ -1,5 +1,6 @@
 """beatmv entry point. Every subcommand takes a song directory (songs/<slug>)."""
 import argparse
+import os
 
 from beatmv import drums, lyrics, render, song as songmod, suno_align, thumbnail
 
@@ -12,9 +13,14 @@ def main():
                        help="separate the drums and write kick/percussion hits and the loudness for the waveform")
     a.add_argument("song_dir")
 
-    r = sub.add_parser("render", help="render the video (4K by default)")
+    r = sub.add_parser("render", help="render the video (4K by default; --portrait for a 1080x1920 Short)")
     r.add_argument("song_dir")
-    r.add_argument("--scale", type=int, default=2, help="scale relative to 1920x1080 (1 = 1080p, 2 = 4K)")
+    r.add_argument("--portrait", action="store_true", help="9:16 layout for Shorts (1080x1920 at scale 1)")
+    r.add_argument("--scale", type=int,
+                   help="scale relative to the layout's design size (default: 2 = 4K landscape, 1 for --portrait)")
+    r.add_argument("--from", dest="start", type=float, metavar="SEC",
+                   help="render only from this time (a clip for checking, or a Short)")
+    r.add_argument("--to", dest="end", type=float, metavar="SEC", help="render only up to this time")
     r.add_argument("--preview", help="write only stills at these times (seconds, comma-separated)")
 
     s = sub.add_parser("srt", help="write SRT subtitles for YouTube")
@@ -26,7 +32,12 @@ def main():
     al = sub.add_parser("align",
                         help="write lyrics.ass: suno uses Suno's alignment only, hybrid combines it with Whisper")
     al.add_argument("song_dir")
-    al.add_argument("--whisper", help="output of align_subtitles.py (default: work/<slug>/lyrics.whisper.ass)")
+    al.add_argument("--whisper", help="output of align_subtitles.py (default: work/<slug>/lyrics.whisper.ass; "
+                                      "hybrid runs align_subtitles.py itself when the file is missing)")
+    al.add_argument("--lyrics", help="lyrics for that run: txt, one line per subtitle line, or ASS "
+                                     "(default: work/<slug>/lyrics.txt)")
+    al.add_argument("--model", default="large-v3", help="Whisper model for that run (default: large-v3)")
+    al.add_argument("--language", default="ja", help="lyrics language for that run (default: ja)")
     al.add_argument("--suno", help="Suno's alignment JSON (default: work/<slug>/suno_alignment.json)")
 
     args = ap.parse_args()
@@ -35,11 +46,16 @@ def main():
     if args.cmd == "analyze":
         drums.analyze(song)
     elif args.cmd == "render":
+        scale = args.scale or (1 if args.portrait else 2)
         if args.preview:
-            for p in render.preview(args.song_dir, args.scale, args.preview.split(",")):
+            for p in render.preview(args.song_dir, scale, args.preview.split(","), args.portrait):
                 print(p)
         else:
-            print(render.render_video(args.song_dir, args.scale))
+            try:
+                clip = render.clip_span(song, args.start, args.end)
+            except ValueError as exc:
+                ap.error(str(exc))
+            print(render.render_video(args.song_dir, scale, args.portrait, clip))
     elif args.cmd == "srt":
         out = song.work(f"{song.slug}.srt")
         lines = lyrics.load_lines(song.lyrics, song.lyrics_aligner)
@@ -57,6 +73,8 @@ def main():
     elif args.cmd == "align":
         whisper = args.whisper or song.work("lyrics.whisper.ass")
         suno = args.suno or song.work("suno_alignment.json")
+        if not os.path.exists(whisper):
+            run_whisper(song, whisper, args)
         subs, warnings = suno_align.merge(whisper, suno_align.load_words(suno))
         subs.save(song.lyrics)
         print(f"{song.lyrics}  {len(subs)} lines")
@@ -68,6 +86,24 @@ def main():
         out = song.work("thumb_bg.png")
         at = thumbnail.background(args.song_dir, out)
         print(f"{out}  t={at:.2f}")
+
+
+def run_whisper(song, out, args):
+    """Run align_subtitles.py's alignment to make the Whisper ASS that hybrid needs (it used to be a manual step).
+
+    The audio is the separated vocal when `analyze` has already made it (more accurate than the full mix),
+    otherwise the song's audio; Demucs is not run here.
+    """
+    lyrics_in = args.lyrics or song.work("lyrics.txt")
+    if not os.path.exists(lyrics_in):
+        raise SystemExit(f"Error: {out} is missing and there are no lyrics to align: {lyrics_in}\n"
+                         "       Put the lyrics there (one line per subtitle line) or pass --lyrics.")
+    vocals = drums.stem4_path(song, "vocals")
+    audio = vocals if os.path.exists(vocals) else song.audio
+    print(f"{out} not found: aligning {lyrics_in} to {audio} with Whisper")
+    import align_subtitles  # imported here: only this path needs it
+
+    align_subtitles.align(audio, lyrics_in, out, model=args.model, language=args.language)
 
 
 if __name__ == "__main__":
