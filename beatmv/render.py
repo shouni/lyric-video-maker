@@ -740,12 +740,15 @@ def render_video(song_dir, scale, portrait=False, clip=None):
         seek = ["-ss", f"{t0}"]
         if t0 > 0:  # a clip cut out of the middle also fades in, to hide the cut
             afade = f"afade=t=in:d={C.fade_in},{afade}"
+    # The output is cut with -t at the audio length, not -shortest. When the length is not a whole number of
+    # frames (Power On, 263.16 s = 7894.8 frames), -shortest dropped the last 3 frames whether the video was
+    # one frame longer or shorter than the audio; -t keeps all of them and the audio at its exact length.
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-i", silent,
          *seek, "-t", f"{dur}", "-i", song.audio,
          "-map", "0:v", "-map", "1:a",
          "-af", afade,
-         "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-shortest", out],
+         "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-t", f"{dur}", out],
         check=True,
     )
     return out
