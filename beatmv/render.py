@@ -29,6 +29,7 @@ from multiprocessing import Pool
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from beatmv import drums
 from beatmv import lyrics as lyr
 from beatmv import song as songmod
 from beatmv import style as stylemod
@@ -195,7 +196,8 @@ class Ctx:
         self.beats, self.down = beats, down
         with open(song.work("drums.json")) as f:
             d = json.load(f)
-        self.kick, self.perc = d["kick"], d["snare"]
+        # drums.json keeps what the detector found; the rolls confirmed by ear are moved at drawing time
+        self.kick, self.perc = drums.apply_snare_rolls(d["kick"], d["snare"], song.snare_rolls)
         self.ghost = d.get("ghost", [])  # dnb ghost notes and hats (only drawn small on the timeline)
         self.rms = np.load(song.work("vocal_rms.npy" if song.wave == "vocals" else "rms.npy"))
         self.bass_rms = np.load(song.work("bass_rms.npy")) if song.bass_band else None

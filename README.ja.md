@@ -252,6 +252,7 @@ songs/<slug>/
 .venv/bin/python -m beatmv render   songs/<slug>   # MV（既定 4K。--scale 1 で 1080p、--preview 45,100 で静止画。--preview は --from / --to と併用不可）
 .venv/bin/python -m beatmv render   songs/<slug> --portrait --from 132 --to 198.2   # ショート: 1080x1920、その区間だけ
 .venv/bin/python -m beatmv srt      songs/<slug>   # YouTube 字幕（SRT）
+.venv/bin/python -m beatmv rolls    songs/<slug>   # スネアロールかもしれないキックの連打（耳でロールと分かったものを snare_rolls に書く）
 .venv/bin/python -m beatmv thumb-bg songs/<slug>   # サムネイルの背景（文字なし。曲名は自作の作曲パイプラインで載せる）
 .venv/bin/python -m beatmv thumb-bg songs/<slug> --portrait   # ショートのサムネイルの背景（1080x1920、横のサムネイルと同じ瞬間）
 ```

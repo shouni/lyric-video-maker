@@ -687,3 +687,36 @@ def test_thumbnail_background_sizes(tmp_path, portrait, size):
     assert Image.open(out).size == size
     # the made-up hits have no snare 0.10-0.22 s after a kick, so both layouts take the middle of the window
     assert t == pytest.approx(8.0)
+
+
+# --------------------------------------------------------------------------- snare rolls
+
+def test_kick_runs_lists_eighth_note_runs_only():
+    bar = 1.4  # an eighth is 0.175 s
+    roll = [10 + 0.175 * k for k in range(8)]
+    five = [20 + 0.175 * k for k in range(5)]  # too short to list
+    quarters = [30 + 0.35 * k for k in range(10)]  # a quarter apart: ordinary kicks
+    runs = drums.kick_runs(sorted(roll + five + quarters), bar)
+    assert [(round(a, 3), round(b, 3), n) for a, b, n in runs] == [(10.0, round(roll[-1], 3), 8)]
+
+
+def test_snare_rolls_move_only_the_kicks_inside_the_spans():
+    kick, perc = drums.apply_snare_rolls([1.0, 5.0, 5.2, 5.4, 9.0], [2.0, 6.0], [(4.9, 5.5)])
+    assert kick == [1.0, 9.0]
+    assert perc == [2.0, 5.0, 5.2, 5.4, 6.0]
+
+
+def test_snare_rolls_default_to_none_and_are_checked(tmp_path):
+    assert not songmod.load(write_song(tmp_path)).snare_rolls
+    assert songmod.load(write_song(tmp_path, snare_rolls="[[2.0, 3.0]]")).snare_rolls == [(2.0, 3.0)]
+    for bad in ("[[3.0, 2.0]]", "[[2.0, 11.0]]"):  # end before start, past the song's 10 s
+        with pytest.raises(ValueError):
+            songmod.load(write_song(tmp_path, snare_rolls=bad))
+
+
+def test_render_draws_declared_rolls_on_the_percussion_row(tmp_path):
+    from beatmv import render
+
+    render.configure(fixture_song(tmp_path, extra_toml="snare_rolls = [[6.4, 6.6]]\n"), 1)
+    assert 6.5 not in render.C.kick and 6.5 in render.C.perc
+    assert render.C.kick == [6.0, 7.0]

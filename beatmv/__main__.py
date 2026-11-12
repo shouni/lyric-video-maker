@@ -1,5 +1,6 @@
 """beatmv entry point. Every subcommand takes a song directory (songs/<slug>)."""
 import argparse
+import json
 import os
 
 from beatmv import drums, lyrics, render, song as songmod, suno_align, thumbnail
@@ -26,6 +27,9 @@ def main():
 
     s = sub.add_parser("srt", help="write SRT subtitles for YouTube")
     s.add_argument("song_dir")
+
+    ro = sub.add_parser("rolls", help="list kick runs that may be snare rolls (from drums.json; no analysis)")
+    ro.add_argument("song_dir")
 
     t = sub.add_parser("thumb-bg", help="write the thumbnail background (1280x720, no text)")
     t.add_argument("song_dir")
@@ -86,6 +90,9 @@ def main():
             print(f"  check: {w}")
         if song.lyrics_aligner != "hybrid":
             print(f'  set lyrics_aligner to "hybrid" in song.toml (it is {song.lyrics_aligner!r})')
+    elif args.cmd == "rolls":
+        with open(song.work("drums.json")) as f:
+            drums.print_roll_candidates(song, json.load(f)["kick"])
     elif args.cmd == "thumb-bg":
         out = song.work("thumb_bg_portrait.png" if args.portrait else "thumb_bg.png")
         at = thumbnail.background(args.song_dir, out, args.portrait)
