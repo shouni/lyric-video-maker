@@ -172,6 +172,10 @@ class Ctx:
         self.TL_Y = px(L.tl_y)
         self.TL_X0, self.TL_X1 = px(L.tl_x0), px(L.tl_x1)
         self.PLAYHEAD_X = (self.TL_X0 + self.TL_X1) // 2
+        # Lowest y the lyric block (lyric rows + translation rows) may reach: 8 px above the timeline's row
+        # labels. Single-row lines with a translation already end up to 13 px below the playhead's top in
+        # landscape (new_morning, collision), so the playhead's top cannot be the limit without moving them.
+        self.TEXT_FLOOR = int(self.TL_Y - px(12 * L.tl_scale) - px(8))
 
         # the span drawn (the whole song, or a clip) and the fades at its two ends
         self.T0, self.T1 = clip or (0.0, song.duration)
@@ -550,7 +554,14 @@ def draw_lyrics(base, t):
 
     gap = px(ROW_GAP)
     block_h = sum(white.height for white, *_ in rows) + gap * (len(rows) - 1)
-    y = C.LYRIC_Y - block_h // 2 + dy
+    trans = translation_images(i) if C.translation is not None and C.translation[i] else []
+    trans_h = px(TRANS_GAP) + sum(im.height for im in trans) + gap * (len(trans) - 1) if trans else 0
+    top = C.LYRIC_Y - block_h // 2
+    # A wrapped lyric over a wrapped translation is taller than the room above the timeline (portrait: a
+    # two-row translation alone ends 21 px above the KICK label on Overclock). Move the whole block up by
+    # what would overlap; the amount depends only on the line, so it does not move while the line is shown.
+    top -= max(0, top + block_h + trans_h - C.TEXT_FLOOR)
+    y = top + dy
     for white, blue, edges, first, end in rows:
         layer = Image.new("RGBA", white.size, (0, 0, 0, 0))
         layer.alpha_composite(white)
@@ -567,7 +578,7 @@ def draw_lyrics(base, t):
     bottom = y - gap
 
     if C.translation is not None:
-        draw_translation(base, i, bottom, appear)
+        draw_translation(base, trans, bottom, appear)
         return
     # the next line, small and faint (not across an interlude)
     if i + 1 < len(C.lines) and C.lines[i + 1][1] - t < 4.0:
@@ -606,16 +617,15 @@ def translation_images(i):
     return C.trans_cache[i]
 
 
-def draw_translation(base, i, lyric_bottom, appear):
-    """Show line i's translation under the lyric. It is not filled; it appears and disappears with the line
+def draw_translation(base, rows, lyric_bottom, appear):
+    """Show a line's translation (the row images from translation_images) under the lyric.
+    It is not filled; it appears and disappears with the line
     (people read at different speeds).
 
     With a translation, the next-line preview is hidden: three rows in one place leave the viewer unsure which to read.
     """
-    if not C.translation[i]:
-        return
     y = int(lyric_bottom + C.px(TRANS_GAP))
-    for im in translation_images(i):
+    for im in rows:
         base.alpha_composite(faded(im, appear), ((C.W - im.width) // 2, y))
         y += im.height + C.px(ROW_GAP)
 

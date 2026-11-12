@@ -249,13 +249,13 @@ songs/<slug>/
 ```sh
 .venv/bin/python -m beatmv analyze  songs/<slug>   # Demucs でドラム分離 → キック/スネアの打点、波形用の音量
 .venv/bin/python -m beatmv align    songs/<slug>   # lyrics.ass を作る（suno: Suno の時刻合わせだけ / hybrid: Whisper と組み合わせる）
-.venv/bin/python -m beatmv render   songs/<slug>   # MV（既定 4K。--scale 1 で 1080p、--preview 45,100 で静止画）
+.venv/bin/python -m beatmv render   songs/<slug>   # MV（既定 4K。--scale 1 で 1080p、--preview 45,100 で静止画。--preview は --from / --to と併用不可）
 .venv/bin/python -m beatmv render   songs/<slug> --portrait --from 132 --to 198.2   # ショート: 1080x1920、その区間だけ
 .venv/bin/python -m beatmv srt      songs/<slug>   # YouTube 字幕（SRT）
 .venv/bin/python -m beatmv thumb-bg songs/<slug>   # サムネイルの背景（文字なし。曲名は自作の作曲パイプラインで載せる）
 ```
 
-- **`--portrait` で同じ曲を 9:16（ショート用）に描く**（既定 1080x1920、`--scale 2` で 2160x3840）。ヘッダーはショートの上部バーより下、タイムラインは下部 UI より上に置きます。最小の文字サイズでも幅に収まらない歌詞や訳は2行に折り返し（英語は単語の間で）、上の行から順に塗られます。
+- **`--portrait` で同じ曲を 9:16（ショート用）に描く**（既定 1080x1920、`--scale 2` で 2160x3840）。ヘッダーはショートの上部バーより下、タイムラインは下部 UI より上に置きます。最小の文字サイズでも幅に収まらない歌詞や訳は2行に折り返し（英語は単語の間で）、上の行から順に塗られます。歌詞と訳を合わせた高さがタイムラインに届く場合は、重なる分だけ全体を上へずらします。
 - **`--from` / `--to` で曲の一部だけを描く**（横・縦どちらでも）。変更の確認に 4K で全曲を描かずに数秒だけ出す、ショートの区間を切り出す、のどちらにも使えます。曲の途中から切り出した区間は 0.08 秒でフェードインし、1.4 秒でフェードアウトします（映像も音も）。端が曲の端と同じなら曲のフェードのままです。ファイル名に区間が入ります（`mv_<slug>_portrait_132-198.2.mp4`）。
 - **時刻はレシピではなく音から取る。** Suno はセクションの秒数を守らず、頼んでいない間奏を足すことがあります。`sections` / `choruses` / `instrumental` には、Suno の時刻合わせと解析から取った実際の時刻を書きます。
 - **ドラムの振り分けは曲で選ぶ**（`drum_rule`）。`rock` は低域が主役の打点をキック、`edm` は四つ打ちのキックのアタックが中高域にも出るので低域が立てばキックとし、2 段目は打楽器全般（`PERC`）として表示します。`trance` は `edm` と同じ基準で、キックになった打点を打楽器に数えません（`edm` ではキックのアタックが打楽器にも数えられ、表拍で縦線とリングが同時に光ります）。キックと同時のクラップが鳴る曲は `edm` のままにします。

@@ -21,7 +21,8 @@ def main():
     r.add_argument("--from", dest="start", type=float, metavar="SEC",
                    help="render only from this time (a clip for checking, or a Short)")
     r.add_argument("--to", dest="end", type=float, metavar="SEC", help="render only up to this time")
-    r.add_argument("--preview", help="write only stills at these times (seconds, comma-separated)")
+    r.add_argument("--preview", help="write only stills at these times (seconds, comma-separated; "
+                                     "not with --from / --to)")
 
     s = sub.add_parser("srt", help="write SRT subtitles for YouTube")
     s.add_argument("song_dir")
@@ -47,6 +48,8 @@ def main():
         drums.analyze(song)
     elif args.cmd == "render":
         scale = args.scale or (1 if args.portrait else 2)
+        if args.preview and (args.start is not None or args.end is not None):
+            ap.error("--preview writes stills at the times given; it cannot be combined with --from / --to")
         if args.preview:
             for p in render.preview(args.song_dir, scale, args.preview.split(","), args.portrait):
                 print(p)

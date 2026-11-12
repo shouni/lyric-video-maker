@@ -249,13 +249,13 @@ songs/<slug>/
 ```sh
 .venv/bin/python -m beatmv analyze  songs/<slug>   # Demucs drum separation → kick/snare hits, loudness for the waveform
 .venv/bin/python -m beatmv align    songs/<slug>   # write lyrics.ass (suno: Suno's alignment only / hybrid: combined with Whisper)
-.venv/bin/python -m beatmv render   songs/<slug>   # the video (4K by default; --scale 1 for 1080p, --preview 45,100 for stills)
+.venv/bin/python -m beatmv render   songs/<slug>   # the video (4K by default; --scale 1 for 1080p, --preview 45,100 for stills; --preview cannot be combined with --from / --to)
 .venv/bin/python -m beatmv render   songs/<slug> --portrait --from 132 --to 198.2   # a Short: 1080x1920, only that span
 .venv/bin/python -m beatmv srt      songs/<slug>   # YouTube subtitles (SRT)
 .venv/bin/python -m beatmv thumb-bg songs/<slug>   # thumbnail background (no text; the title is added by my own composing pipeline)
 ```
 
-- **`--portrait` draws the same song in 9:16 for Shorts** (1080x1920 by default, `--scale 2` for 2160x3840). The header sits below the Shorts top bar and the timeline above the bottom UI. A lyric or translation that is still too wide at the smallest text size wraps into two rows (between words for English), and the rows fill one after the other.
+- **`--portrait` draws the same song in 9:16 for Shorts** (1080x1920 by default, `--scale 2` for 2160x3840). The header sits below the Shorts top bar and the timeline above the bottom UI. A lyric or translation that is still too wide at the smallest text size wraps into two rows (between words for English), and the rows fill one after the other. If the lyric and its translation together would reach the timeline, the block moves up by what would overlap.
 - **`--from` / `--to` render only part of the song**, in either layout: a few seconds to check a change without rendering the whole song in 4K, or the span of a Short. A clip cut out of the middle fades in over 0.08 s and out over 1.4 s (picture and audio); an end that coincides with the song's keeps the song's fade. The file is named after the span (`mv_<slug>_portrait_132-198.2.mp4`).
 - **Take times from the audio, not from the recipe.** Suno does not keep the section lengths it was asked for and sometimes adds interludes nobody asked for. Write the real times, from Suno's alignment and analysis, into `sections` / `choruses` / `instrumental`.
 - **Pick the drum rule per song** (`drum_rule`). `rock` calls a hit a kick when the low end dominates. `edm` calls it a kick when the low end rises, because a four-on-the-floor kick's attack also reaches the mids, and shows the second row as general percussion (`PERC`). `trance` uses the same rule as `edm` but does not count kicks as percussion (with `edm`, the kick's attack also counts as percussion, so the vertical lines and the ring flash together on the beat). Keep `edm` for songs with claps on the kick.

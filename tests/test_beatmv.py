@@ -624,3 +624,51 @@ def test_japanese_text_falls_back_to_burn_subs_fonts(monkeypatch, tmp_path):
         assert render.jp_font_path("bold") == str(present)
     finally:
         render.jp_font_path.cache_clear()
+
+
+def test_wrapped_lyric_and_translation_stay_above_the_timeline(tmp_path):
+    from beatmv import render
+
+    n = len(pysubs2.load(os.path.join(FIXTURE, "lyrics.ass")))
+    song_dir = fixture_song(tmp_path, extra_toml='translation = "ja.txt"\n',
+                            extra_events=[(20000, 23000, LONG_LINE)])
+    long_translation = "限界を超えて心臓をオーバークロックしろ、今夜与えられたすべての壁の向こうまで走り抜けろ"
+    with open(os.path.join(song_dir, "ja.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(["訳"] * n + [long_translation]) + "\n")
+    C = render.configure(song_dir, 1, portrait=True)
+    C.song.duration = C.T1 = 30.0
+    C.rms = np.full(30 * 30, 0.5)
+    assert len(render.line_images(n)) == 2 and len(render.translation_images(n)) == 2
+    lyric_h = sum(row[0].height for row in render.line_images(n)) + C.px(render.ROW_GAP)
+
+    def text_rows(floor):
+        """First and last pixel row the long line and its translation touch, with the limit at `floor`."""
+        C.TEXT_FLOOR = floor
+        with_text = np.asarray(render.render_image(22.0)).astype(int)
+        lines, translation = C.lines, C.translation
+        C.lines, C.translation = lines[:n], translation[:n]
+        without = np.asarray(render.render_image(22.0)).astype(int)
+        C.lines, C.translation = lines, translation
+        changed = np.nonzero((with_text != without).any(axis=(1, 2)))[0]
+        return changed.min(), changed.max()
+
+    # at these sizes two rows over two rows still end above the timeline, so nothing moves
+    top, bottom = text_rows(C.TEXT_FLOOR)
+    assert bottom < C.TEXT_FLOOR
+    assert top == pytest.approx(C.LYRIC_Y - lyric_h // 2, abs=8)
+    # with less room (larger text, a taller translation) the whole block moves up by what would overlap
+    low_top, low_bottom = text_rows(bottom - 60)
+    assert low_bottom < bottom - 60
+    assert low_top == pytest.approx(top - 64, abs=6)
+
+
+def test_fixture_lines_are_not_moved_by_the_timeline_limit(tmp_path):
+    from beatmv import render
+
+    for portrait in (False, True):
+        root = tmp_path / str(portrait)
+        root.mkdir()
+        C = render.configure(fixture_song(root), 1, portrait=portrait)
+        for i in range(len(C.lines)):
+            height = sum(row[0].height for row in render.line_images(i))
+            assert C.LYRIC_Y + height // 2 < C.TEXT_FLOOR
