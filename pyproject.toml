@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lyric-video-maker"
-version = "1.0.9"  # the next tag: v1.0.8 points at a commit from before packaging, so it must not be reused
+version = "1.0.10"  # keep in step with the git tag (v1.0.10)
 description = "Turn a song into a music video with karaoke lyrics"
 readme = "README.md"
 license = "MIT"
