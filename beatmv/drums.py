@@ -98,9 +98,14 @@ def separate(song):
     return drums
 
 
+def stem4_path(song, stem):
+    """Where the Demucs 4-stem split puts a stem (whether or not it has been separated yet)."""
+    return song.work("sep4", "htdemucs", os.path.splitext(os.path.basename(song.audio))[0], f"{stem}.wav")
+
+
 def separate4(song, stem):
     """Return a stem of the Demucs 4-stem split (drums / bass / other / vocals). Does nothing if already separated."""
-    path = song.work("sep4", "htdemucs", os.path.splitext(os.path.basename(song.audio))[0], f"{stem}.wav")
+    path = stem4_path(song, stem)
     if not os.path.exists(path):
         import torch
 

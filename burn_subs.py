@@ -34,8 +34,8 @@ class RenderConfig:
     secondary: tuple
     outline_color: tuple
     mode: str = "karaoke"  # "karaoke" | "line"
-    position: str = "bottom"  # "top" | "center" | "bottom" (line mode only)
-    letter_spacing: int = 0  # letter spacing in px (line mode only)
+    position: str = "bottom"  # "top" | "center" | "bottom"
+    letter_spacing: int = 0  # letter spacing in px
     box: Any = None  # background box as ((r, g, b, a), pad_px); None disables it
 
 
@@ -59,14 +59,28 @@ def require_ffmpeg(*tools):
         raise SystemExit(f"Error: {', '.join(missing)} not found (macOS: brew install ffmpeg)")
 
 
+FONT_ENV = "BURN_SUBS_FONT"  # a font file tried before FONT_CANDIDATES (a host without the fonts below)
 FONT_CANDIDATES = [
+    # macOS
     "/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc",
     os.path.expanduser("~/Library/Fonts/SourceHanSans-VF.otf.ttc"),
     "/System/Library/Fonts/Hiragino Sans GB.ttc",
     "/System/Library/Fonts/AppleSDGothicNeo.ttc",
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     "/Library/Fonts/Arial Unicode.ttf",
+    # Linux (Docker: fonts-noto-cjk), so the sister web service can import this module instead of a copy
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf",
+    # Linux (custom install)
+    "/usr/local/share/fonts/SourceHanSans-VF.otf.ttc",
 ]
+
+
+def font_candidates():
+    """Font files to try, in order: the one named by $BURN_SUBS_FONT (if set), then FONT_CANDIDATES."""
+    override = os.environ.get(FONT_ENV)
+    return ([override] if override else []) + FONT_CANDIDATES
 
 
 def safe_extract(zip_file, target_dir):
@@ -148,8 +162,8 @@ def event_at(events, t_sec):
 
 
 def load_font(font_size):
-    """Find and load a font that can draw Japanese, in FONT_CANDIDATES order."""
-    for path in FONT_CANDIDATES:
+    """Find and load a font that can draw Japanese, in font_candidates() order."""
+    for path in font_candidates():
         if os.path.exists(path):
             try:
                 font = ImageFont.truetype(path, font_size)
@@ -280,26 +294,26 @@ def fit_karaoke_layout(draw, segs, cfg):
     def split_texts(idx):
         return ["".join(texts[:idx]), "".join(texts[idx:])]
 
-    font, idx = fit_units(draw, texts, cfg, 0, split_texts)
+    font, idx = fit_units(draw, texts, cfg, cfg.letter_spacing, split_texts)
     return font, [segs] if idx is None else [segs[:idx], segs[idx:]]
 
 
-def render_line_frame(img, text, cfg):
-    """Draw one line of text following the style (placement, letter spacing, background box).
+def draw_text_block(img, lines, font, cfg):
+    """Draw 1–2 lines of coloured text runs following the style (placement, letter spacing, background box).
 
-    Text that does not fit is shrunk or wrapped into two lines. Given a transparent layer (RGBA), it keeps the
-    transparency (for video overlays).
+    `lines` is a list of lines, each a list of (text, colour) runs: line mode passes one run per line, karaoke
+    mode one run per \\k segment. Both modes share this, so position / letter_spacing / box behave the same.
+    Given a transparent layer (RGBA), it keeps the transparency (for video overlays).
     """
     img_w, img_h = cfg.img_size
     draw = ImageDraw.Draw(img)
-
-    font, lines = fit_line_layout(draw, text, cfg)
+    spacing = cfg.letter_spacing
 
     line_metrics = []
-    for ln in lines:
-        w = measure_line(draw, ln, font, cfg.letter_spacing)
-        bbox = draw.textbbox((0, 0), ln, font=font)
-        line_metrics.append((ln, w, bbox))
+    for runs in lines:
+        text = "".join(t for t, _ in runs)
+        w = measure_line(draw, text, font, spacing)
+        line_metrics.append((runs, w, draw.textbbox((0, 0), text, font=font)))
 
     line_gap = int(getattr(font, "size", 20) * 0.3)
     block_h = sum(b[3] - b[1] for _, _, b in line_metrics) + line_gap * (len(lines) - 1)
@@ -314,8 +328,8 @@ def render_line_frame(img, text, cfg):
     # draw.text puts the glyph top at y + bbox[1], so offset by bbox[1]
     placements = []
     cur_top = block_top
-    for ln, w, bbox in line_metrics:
-        placements.append((ln, w, (img_w - w) / 2, cur_top - bbox[1]))
+    for runs, w, bbox in line_metrics:
+        placements.append((runs, (img_w - w) / 2, cur_top - bbox[1]))
         cur_top += (bbox[3] - bbox[1]) + line_gap
 
     if cfg.box:
@@ -333,30 +347,45 @@ def render_line_frame(img, text, cfg):
             img = img.convert(orig_mode)
         draw = ImageDraw.Draw(img)
 
-    for ln, _w, x, y in placements:
-        if cfg.letter_spacing > 0:
-            cur_x = x
-            for ch in ln:
+    for runs, x, y in placements:
+        cur_x = x  # with letter spacing: every character is placed on its own
+        # without: each run starts at the advance of the text before it, so kerning carries across runs and the
+        # line is as wide as measured. Advancing by each run's own width ignored kerning, which Hiragino has
+        # between kana too (ト・, え/い): 3–6 px of drift by the end of a 64 px line on the sample
+        done = ""
+        for text, color in runs:
+            if spacing > 0:
+                for ch in text:
+                    draw.text(
+                        (cur_x, y), ch, font=font, fill=color,
+                        stroke_width=cfg.outline, stroke_fill=cfg.outline_color,
+                    )
+                    cur_x += draw.textlength(ch, font=font) + spacing
+            else:
                 draw.text(
-                    (cur_x, y), ch, font=font, fill=cfg.primary,
+                    (x + draw.textlength(done, font=font), y), text, font=font, fill=color,
                     stroke_width=cfg.outline, stroke_fill=cfg.outline_color,
                 )
-                cur_x += draw.textlength(ch, font=font) + cfg.letter_spacing
-        else:
-            draw.text(
-                (x, y), ln, font=font, fill=cfg.primary,
-                stroke_width=cfg.outline, stroke_fill=cfg.outline_color,
-            )
+                done += text
     return img
 
 
-def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
-    """Draw the subtitle for that time onto one frame's background image.
+def render_line_frame(img, text, cfg):
+    """Draw one line of text following the style (placement, letter spacing, background box).
+
+    Text that does not fit is shrunk or wrapped into two lines. Given a transparent layer (RGBA), it keeps the
+    transparency (for video overlays).
+    """
+    font, lines = fit_line_layout(ImageDraw.Draw(img), text, cfg)
+    return draw_text_block(img, [[(ln, cfg.primary)] for ln in lines], font, cfg)
+
+
+def render_event(img, evt, elapsed_cs, cfg):
+    """Draw the subtitle event `evt` as it looks elapsed_cs after its start onto img, and return the image.
 
     Karaoke mode colours each \\k segment with the highlight or waiting colour; line mode hands the whole line
-    to render_line_frame.
+    to render_line_frame. img may be a background still or a transparent layer (burn_subs_video.py).
     """
-    img = get_base_img(img_path, img_cache)
     if evt is None:
         return img
 
@@ -368,39 +397,22 @@ def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
         full_text = "".join(t for _, _, t in segs)
         return render_line_frame(img, full_text, cfg)
 
-    img_w, img_h = cfg.img_size
     n_highlighted = highlighted_count(segs, elapsed_cs)
+    font, seg_lines = fit_karaoke_layout(ImageDraw.Draw(img), segs, cfg)
 
-    draw = ImageDraw.Draw(img)
-    font, seg_lines = fit_karaoke_layout(draw, segs, cfg)
-
-    line_texts = ["".join(t for _, _, t in line) for line in seg_lines]
-    line_bboxes = [draw.textbbox((0, 0), txt, font=font) for txt in line_texts]
-
-    line_gap = int(getattr(font, "size", 20) * 0.3)
-    block_h = sum(b[3] - b[1] for b in line_bboxes) + line_gap * (len(seg_lines) - 1)
-    y = img_h - block_h - cfg.margin_v
-
-    idx = 0
-    for line, _txt, bbox in zip(seg_lines, line_texts, line_bboxes, strict=False):
-        total_w = bbox[2] - bbox[0]
-        cur_x = (img_w - total_w) // 2
+    lines, idx = [], 0
+    for line in seg_lines:
+        runs = []
         for _s, _e, seg_text in line:
-            color = cfg.primary if idx < n_highlighted else cfg.secondary
-            draw.text(
-                (cur_x, y),
-                seg_text,
-                font=font,
-                fill=color,
-                stroke_width=cfg.outline,
-                stroke_fill=cfg.outline_color,
-            )
-            seg_bbox = draw.textbbox((0, 0), seg_text, font=font)
-            cur_x += seg_bbox[2] - seg_bbox[0]
+            runs.append((seg_text, cfg.primary if idx < n_highlighted else cfg.secondary))
             idx += 1
-        y += (bbox[3] - bbox[1]) + line_gap
+        lines.append(runs)
+    return draw_text_block(img, lines, font, cfg)
 
-    return img
+
+def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
+    """Draw the subtitle for that time onto one frame's background image."""
+    return render_event(get_base_img(img_path, img_cache), evt, elapsed_cs, cfg)
 
 
 def collect_transition_times(events, total_dur, include_char_transitions=True):
@@ -553,7 +565,7 @@ def build_render_config(subs, img_size, style_over, force_mode=None, subs_source
     Pixel values (font_size / margin_v / outline / letter_spacing / box.pad) are taken as given for the
     ASS PlayResY and scaled to the real image or video height. burn_subs.py (slideshow) and
     burn_subs_video.py (video overlay) share this function so both look the same.
-    force_mode ignores style.json's mode and fixes it (the video side supports line mode only).
+    force_mode ignores style.json's mode and fixes it (the video side decides its own default, line mode).
     """
     img_w, img_h = img_size
     play_res_y = int(subs.info.get("PlayResY", "1080"))

@@ -462,3 +462,213 @@ def test_render_draws_the_translation_under_the_lyric(tmp_path):
     without = np.asarray(render.render_image(7.1))
     band = slice(render.C.LYRIC_Y + 40, render.C.LYRIC_Y + 160)
     assert (with_trans[band] != without[band]).any(), "the translation is drawn in the band under the lyric"
+
+
+# ------------------------------------------------------------- layouts (landscape / portrait) and clips
+
+def fixture_song(tmp_path, extra_toml="", extra_events=()):
+    """The made-up song in a temp directory with analyze's outputs, ready for render.configure."""
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "drums.json").write_text(json.dumps({"kick": [6.0, 6.5, 7.0], "snare": [6.5]}))
+    np.save(work / "rms.npy", np.full(12 * 30, 0.5))
+    song_dir = tmp_path / "song"
+    song_dir.mkdir()
+    toml = open(os.path.join(FIXTURE, "song.toml")).read().replace('"work/fixture"', f'"{work}"')
+    (song_dir / "song.toml").write_text(extra_toml + toml)
+    (song_dir / "beats.json").write_bytes(open(os.path.join(FIXTURE, "beats.json"), "rb").read())
+    subs = pysubs2.load(os.path.join(FIXTURE, "lyrics.ass"))
+    for start, end, text in extra_events:
+        subs.append(pysubs2.SSAEvent(start=start, end=end, text=text))
+    subs.save(str(song_dir / "lyrics.ass"))
+    return str(song_dir)
+
+
+@pytest.mark.parametrize("scale", [1, 2])
+def test_portrait_renders_a_nine_by_sixteen_frame(tmp_path, scale):
+    from beatmv import render
+
+    render.configure(fixture_song(tmp_path), scale, portrait=True)
+    assert render.render_image(7.1).size == (1080 * scale, 1920 * scale)
+
+
+def test_portrait_keeps_the_timeline_inside_the_frame():
+    from beatmv import render
+
+    for layout in (render.LANDSCAPE, render.PORTRAIT):
+        assert 0 < layout.tl_x0 < layout.tl_x1 < layout.w
+        assert layout.w / 2 - layout.snare_spread - 40 >= 0, "the percussion lines stay on screen"
+        assert layout.title_y < layout.wave_y < layout.lyric_y < layout.tl_y < layout.h
+
+
+LONG_WORDS = "Overclock the heart and run past every limit we were given tonight".split()
+LONG_LINE = "".join(rf"{{\k25}}{' ' if k else ''}{w}" for k, w in enumerate(LONG_WORDS))
+
+
+def test_a_line_too_wide_for_portrait_wraps_into_two_rows_between_words(tmp_path):
+    from beatmv import render
+
+    song_dir = fixture_song(tmp_path, extra_events=[(20000, 23000, LONG_LINE)])
+    C = render.configure(song_dir, 1, portrait=True)
+    i = len(C.lines) - 1
+    rows = render.line_images(i)
+    assert len(rows) == 2
+    assert [(first, end) for *_, first, end in rows] == [(0, rows[0][4]), (rows[0][4], len(LONG_WORDS))]
+    for white, blue, edges, first, end in rows:
+        assert white.size == blue.size and white.width <= C.W - C.px(C.L.lyric_margin) + C.px(8)
+        assert len(edges) == end - first and edges == sorted(edges)
+
+    # the fixture's own short lines stay on one row, in portrait too
+    assert all(len(render.line_images(k)) == 1 for k in range(i))
+
+
+def test_wrapped_rows_fill_one_after_the_other(tmp_path):
+    from beatmv import render
+
+    song_dir = fixture_song(tmp_path, extra_events=[(20000, 23000, LONG_LINE)])
+    C = render.configure(song_dir, 1, portrait=True)
+    C.song.duration = 30.0
+    C.T1 = 30.0
+    C.rms = np.full(30 * 30, 0.5)
+    rows = render.line_images(len(C.lines) - 1)
+    sung = np.array(C.pal.sung)
+    top = C.LYRIC_Y - (rows[0][0].height + rows[1][0].height + C.px(render.ROW_GAP)) // 2
+
+    def sung_pixels(t):
+        img = np.asarray(render.render_image(t)).astype(int)
+        split = top + rows[0][0].height
+        is_sung = (np.abs(img - sung).sum(axis=2) < 12)
+        return is_sung[top:split].sum(), is_sung[split:split + rows[1][0].height].sum()
+
+    first_row, second_row = sung_pixels(20.0 + 0.25 * 2.5)  # in the third word
+    assert first_row > 0 and second_row == 0
+    first_done, second_part = sung_pixels(20.0 + 0.25 * (rows[0][4] + 1.5))
+    assert first_done > first_row and second_part > 0
+
+
+def test_translation_images_are_built_once_per_line(tmp_path):
+    from beatmv import render
+
+    n = len(pysubs2.load(os.path.join(FIXTURE, "lyrics.ass")))
+    song_dir = fixture_song(tmp_path, extra_toml='translation = "ja.txt"\n')
+    with open(os.path.join(song_dir, "ja.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(["訳"] * n) + "\n")
+    C = render.configure(song_dir, 1)
+    a = np.asarray(render.render_image(7.1))
+    cached = dict(C.trans_cache)
+    assert cached, "the translation drawn at 7.1 s is cached"
+    b = np.asarray(render.render_image(7.1))
+    assert (a == b).all()
+    assert all(C.trans_cache[i] is rows for i, rows in cached.items())
+
+
+def test_clip_span_defaults_and_limits():
+    from types import SimpleNamespace
+
+    from beatmv import render
+
+    song = SimpleNamespace(duration=12.0)
+    assert render.clip_span(song, None, None) is None
+    assert render.clip_span(song, 3.0, None) == (3.0, 12.0)
+    assert render.clip_span(song, None, 5.0) == (0.0, 5.0)
+    assert render.clip_span(song, 3.0, 99.0) == (3.0, 12.0), "the end is capped at the song's length"
+    with pytest.raises(ValueError):
+        render.clip_span(song, 5.0, 4.0)
+    with pytest.raises(ValueError):
+        render.clip_span(song, -1.0, 4.0)
+
+
+def test_output_names_tell_layouts_scales_and_clips_apart():
+    from types import SimpleNamespace
+
+    from beatmv import render
+
+    song = SimpleNamespace(slug="x", work=lambda name: name)
+    assert render.output_path(song, 1) == "mv_x.mp4"
+    assert render.output_path(song, 2) == "mv_x_2160p.mp4"
+    assert render.output_path(song, 1, portrait=True) == "mv_x_portrait.mp4"
+    assert render.output_path(song, 2, portrait=True) == "mv_x_portrait_3840p.mp4"
+    assert render.output_path(song, 2, clip=(60.0, 75.5)) == "mv_x_2160p_60-75.5.mp4"
+
+
+def test_a_clip_fades_at_its_own_ends(tmp_path):
+    from beatmv import render
+
+    song_dir = fixture_song(tmp_path)
+    C = render.configure(song_dir, 1)
+    assert (C.T0, C.T1, C.fade_in, C.fade_out) == (0.0, 12.0, C.song.fade_in, C.song.fade_out)
+    full = np.asarray(render.render_image(7.0)).astype(int)
+
+    C = render.configure(song_dir, 1, clip=(7.0, 9.0))
+    assert (C.fade_in, C.fade_out) == (render.CLIP_FADE_IN, render.CLIP_FADE_OUT)
+    start = np.asarray(render.render_image(7.0)).astype(int)
+    background = np.array(C.pal.background_top)
+    assert (start == background).all(), "the clip's first frame is the fade colour"
+    assert not (full == background).all()
+    assert (np.asarray(render.render_image(8.0)).astype(int) != background).any()
+
+    # a clip that starts and ends with the song keeps the song's fades
+    C = render.configure(song_dir, 1, clip=(0.0, 12.0))
+    assert (C.fade_in, C.fade_out) == (C.song.fade_in, C.song.fade_out)
+
+
+def test_japanese_text_falls_back_to_burn_subs_fonts(monkeypatch, tmp_path):
+    from beatmv import render
+
+    present = tmp_path / "some.ttf"
+    present.write_bytes(b"")
+    monkeypatch.setattr(render, "_JP_WEIGHT", {"bold": str(tmp_path / "missing.ttc")})
+    monkeypatch.setenv(burn_subs.FONT_ENV, str(present))
+    render.jp_font_path.cache_clear()
+    try:
+        assert render.jp_font_path("bold") == str(present)
+    finally:
+        render.jp_font_path.cache_clear()
+
+
+def test_wrapped_lyric_and_translation_stay_above_the_timeline(tmp_path):
+    from beatmv import render
+
+    n = len(pysubs2.load(os.path.join(FIXTURE, "lyrics.ass")))
+    song_dir = fixture_song(tmp_path, extra_toml='translation = "ja.txt"\n',
+                            extra_events=[(20000, 23000, LONG_LINE)])
+    long_translation = "限界を超えて心臓をオーバークロックしろ、今夜与えられたすべての壁の向こうまで走り抜けろ"
+    with open(os.path.join(song_dir, "ja.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(["訳"] * n + [long_translation]) + "\n")
+    C = render.configure(song_dir, 1, portrait=True)
+    C.song.duration = C.T1 = 30.0
+    C.rms = np.full(30 * 30, 0.5)
+    assert len(render.line_images(n)) == 2 and len(render.translation_images(n)) == 2
+    lyric_h = sum(row[0].height for row in render.line_images(n)) + C.px(render.ROW_GAP)
+
+    def text_rows(floor):
+        """First and last pixel row the long line and its translation touch, with the limit at `floor`."""
+        C.TEXT_FLOOR = floor
+        with_text = np.asarray(render.render_image(22.0)).astype(int)
+        lines, translation = C.lines, C.translation
+        C.lines, C.translation = lines[:n], translation[:n]
+        without = np.asarray(render.render_image(22.0)).astype(int)
+        C.lines, C.translation = lines, translation
+        changed = np.nonzero((with_text != without).any(axis=(1, 2)))[0]
+        return changed.min(), changed.max()
+
+    # at these sizes two rows over two rows still end above the timeline, so nothing moves
+    top, bottom = text_rows(C.TEXT_FLOOR)
+    assert bottom < C.TEXT_FLOOR
+    assert top == pytest.approx(C.LYRIC_Y - lyric_h // 2, abs=8)
+    # with less room (larger text, a taller translation) the whole block moves up by what would overlap
+    low_top, low_bottom = text_rows(bottom - 60)
+    assert low_bottom < bottom - 60
+    assert low_top == pytest.approx(top - 64, abs=6)
+
+
+def test_fixture_lines_are_not_moved_by_the_timeline_limit(tmp_path):
+    from beatmv import render
+
+    for portrait in (False, True):
+        root = tmp_path / str(portrait)
+        root.mkdir()
+        C = render.configure(fixture_song(root), 1, portrait=portrait)
+        for i in range(len(C.lines)):
+            height = sum(row[0].height for row in render.line_images(i))
+            assert C.LYRIC_Y + height // 2 < C.TEXT_FLOOR

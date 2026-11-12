@@ -287,3 +287,86 @@ class TestLayout:
         _, seg_lines = bs.fit_karaoke_layout(draw, segs, cfg)
         assert len(seg_lines) == 2
         assert sum(len(line) for line in seg_lines) == len(segs)
+
+
+class TestTextBlock:
+    """Placement shared by karaoke and line mode (draws with a real font)."""
+
+    SIZE = (640, 360)
+
+    @pytest.fixture
+    def font(self):
+        font = bs.load_font(40)
+        if not hasattr(font, "font_variant") or getattr(font, "size", 0) != 40:
+            pytest.skip("skipped where no scalable font is available")
+        return font
+
+    def cfg(self, font, **over):
+        return bs.RenderConfig(
+            font=font, img_size=self.SIZE, margin_v=20, outline=2,
+            primary=(255, 255, 0), secondary=(255, 255, 255), outline_color=(0, 0, 0), **over,
+        )
+
+    def ink_box(self, img):
+        """Bounding box of everything drawn on a black (or transparent) canvas."""
+        return img.convert("RGB").getbbox()
+
+    def event(self, text="あいうえお"):
+        return (0.0, 5.0, "".join(rf"{{\k50}}{c}" for c in text))
+
+    @pytest.mark.parametrize("mode", ["karaoke", "line"])
+    def test_position_moves_the_text_in_both_modes(self, font, mode):
+        tops = {}
+        for position in ("top", "center", "bottom"):
+            cfg = self.cfg(font, mode=mode, position=position)
+            img = bs.render_event(Image.new("RGB", self.SIZE), self.event(), 100, cfg)
+            box = self.ink_box(img)
+            tops[position] = (box[1], box[3])
+        assert tops["top"][0] < tops["center"][0] < tops["bottom"][0]
+        assert tops["top"][0] == pytest.approx(20, abs=3), "the outline starts just above margin_v"
+        assert tops["bottom"][1] == pytest.approx(360 - 20, abs=3)
+
+    def test_karaoke_fully_sung_matches_line_mode(self, font):
+        # ト・ and え/い kern in Hiragino: segments advanced by their own widths would drift from the whole line
+        evt = self.event("ブラスト・サマーを超えていけ")
+        line = bs.render_event(Image.new("RGB", self.SIZE), evt, 0, self.cfg(font, mode="line"))
+        sung = bs.render_event(Image.new("RGB", self.SIZE), evt, 10_000, self.cfg(font, mode="karaoke"))
+        assert self.ink_box(line) == self.ink_box(sung)
+
+    def test_karaoke_colours_only_the_sung_segments(self, font):
+        img = bs.render_event(Image.new("RGB", self.SIZE), self.event(), 120, self.cfg(font, mode="karaoke"))
+        colors = {c for _, c in img.getcolors(maxcolors=1 << 20)}
+        assert (255, 255, 0) in colors and (255, 255, 255) in colors
+
+    def test_karaoke_letter_spacing_widens_the_line(self, font):
+        plain = bs.render_event(Image.new("RGB", self.SIZE), self.event(), 0, self.cfg(font))
+        spaced = bs.render_event(Image.new("RGB", self.SIZE), self.event(), 0, self.cfg(font, letter_spacing=10))
+        width = lambda img: self.ink_box(img)[2] - self.ink_box(img)[0]  # noqa: E731
+        assert width(spaced) == pytest.approx(width(plain) + 40, abs=2)
+
+    def test_karaoke_draws_the_box(self, font):
+        cfg = self.cfg(font, box=((0, 0, 255, 255), 10))
+        img = bs.render_event(Image.new("RGB", self.SIZE), self.event(), 0, cfg)
+        assert (0, 0, 255) in {c for _, c in img.getcolors(maxcolors=1 << 20)}
+
+    def test_karaoke_keeps_a_transparent_layer_transparent(self, font):
+        layer = Image.new("RGBA", self.SIZE, (0, 0, 0, 0))
+        img = bs.render_event(layer, self.event(), 100, self.cfg(font))
+        assert img.mode == "RGBA"
+        assert img.getpixel((2, 2))[3] == 0, "away from the text nothing is drawn"
+        assert img.getchannel("A").getbbox() is not None, "the text itself is opaque"
+
+    def test_no_event_returns_the_image_untouched(self, font):
+        img = Image.new("RGB", self.SIZE)
+        assert bs.render_event(img, None, 0, self.cfg(font)) is img
+
+
+class TestFontCandidates:
+    def test_env_font_is_tried_first(self, monkeypatch):
+        monkeypatch.setenv(bs.FONT_ENV, "/fonts/mine.ttf")
+        assert bs.font_candidates()[0] == "/fonts/mine.ttf"
+        assert bs.font_candidates()[1:] == bs.FONT_CANDIDATES
+
+    def test_without_env_only_the_built_in_list(self, monkeypatch):
+        monkeypatch.delenv(bs.FONT_ENV, raising=False)
+        assert bs.font_candidates() == bs.FONT_CANDIDATES

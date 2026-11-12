@@ -1,3 +1,32 @@
+# Packaging exists so other projects can import the tools instead of copying them: the sister web service
+# (lyric-video) kept its own copies of align_subtitles.py / burn_subs.py, and fixes had to be ported by hand.
+#   pip install "git+https://github.com/shouni/lyric-video-maker"          # burn_subs, burn_subs_video, make_cover
+#   pip install "lyric-video-maker[align] @ git+https://github.com/shouni/lyric-video-maker"   # + Whisper alignment
+# Day-to-day use stays `pip install -r requirements.txt` (pinned versions) in a checkout.
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lyric-video-maker"
+version = "1.0.9"  # the next tag: v1.0.8 points at a commit from before packaging, so it must not be reused
+description = "Turn a song into a music video with karaoke lyrics"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = ["pysubs2>=1.9", "pillow>=13"]
+
+[project.optional-dependencies]
+align = ["stable-ts>=2.19", "silero-vad>=6.2"]
+beatmv = ["numpy>=2.5", "demucs>=4.1", "librosa>=0.11"]
+
+[project.urls]
+Repository = "https://github.com/shouni/lyric-video-maker"
+
+[tool.setuptools]
+# beatmv is not installed: it reads styles/ and songs/ next to the package, so it runs from a checkout.
+py-modules = ["align_subtitles", "burn_subs", "burn_subs_video", "make_cover"]
+
 [tool.ruff]
 # Long lines are deliberate here: calibration notes sit next to the constants they explain.
 line-length = 120
