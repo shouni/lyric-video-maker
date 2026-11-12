@@ -144,13 +144,15 @@ LANDSCAPE = Layout(
 # 9:16 (Shorts). The values are those of the per-song Shorts scripts this replaces (Overclock's
 # build_short.py): the header starts below the Shorts top bar and the timeline ends above the bottom UI.
 # A phone shows 1080 px across the full screen width, so text can be smaller in design px than in landscape.
+# tl_scale is 1.3 as in landscape and the English series' Shorts (Only the Pulse's build_short_en.py): Overclock's
+# 1.1 predates the 2026-11-08 change that enlarged the timeline because KICK / SNARE were unreadable on a phone.
 PORTRAIT = Layout(
     name="portrait", w=1080, h=1920,
     title_y=230, title_font=64, sec_y=330, sec_font=30, beat_y=400, beat_step=34, beat_half=9,
     wave_y=820, wave_margin=40, wave_step=6, wave_freqs=(9, 23, 41), wave_base=30, wave_gain=150,
     ring_reach=380, snare_half=180, snare_spread=470, bass_y=1050, bass_reach=400,
     lyric_y=1290, lyric_margin=80, next_dy=100, next_font=44,
-    tl_y=1560, tl_x0=200, tl_x1=1020, tl_span=2.0, tl_scale=1.1, dots=90,
+    tl_y=1560, tl_x0=200, tl_x1=1020, tl_span=2.0, tl_scale=1.3, dots=90,
 )
 
 
