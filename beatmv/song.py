@@ -14,7 +14,7 @@ from dataclasses import dataclass
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 DRUM_RULES = ("rock", "edm", "trance", "dnb")
-LYRICS_ALIGNERS = ("suno", "whisper", "hybrid")
+LYRICS_ALIGNERS = ("suno", "suno_kana", "whisper", "hybrid")
 WAVE_SOURCES = ("mix", "vocals")
 
 

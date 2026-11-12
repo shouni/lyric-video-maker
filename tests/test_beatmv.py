@@ -720,3 +720,74 @@ def test_render_draws_declared_rolls_on_the_percussion_row(tmp_path):
     render.configure(fixture_song(tmp_path, extra_toml="snare_rolls = [[6.4, 6.6]]\n"), 1)
     assert 6.5 not in render.C.kick and 6.5 in render.C.perc
     assert render.C.kick == [6.0, 7.0]
+
+
+# --------------------------------------------------------------------------- suno_kana (Japanese from Suno's kana)
+
+def _w(word, a, b):
+    return {"word": word, "start_s": a, "end_s": b}
+
+
+def _starts(subs, line=0):
+    """Each display segment of a line as (text, start s), from the \\k tags (empty gap segments skipped)."""
+    e = subs[line]
+    out, t = [], e.start / 1000
+    for a, _b, txt in burn_subs.parse_karaoke(e.text):
+        if txt:
+            out.append((txt, round(t + a / 100, 2)))
+    return out
+
+
+def test_suno_kana_starts_each_kanji_at_its_reading():
+    from beatmv import suno_kana
+
+    # 電車が: Suno sang デ ン シャ ガ. 車 must start at シャ, not at ン (no reading starts with ン)
+    words = [_w("[Verse]\nデ", 1.0, 1.2), _w("ン", 1.2, 1.4), _w("シャ", 1.4, 1.8), _w("ガ", 1.8, 2.0)]
+    subs, warnings = suno_kana.lines_to_ass(["電車が"], words)
+    assert _starts(subs) == [("電", 1.0), ("車", 1.4), ("が", 1.8)]
+    assert warnings == []
+
+
+def test_suno_kana_matches_particles_as_sung():
+    from beatmv import suno_kana
+
+    # Suno writes the particles を and へ as sung: オ and エ
+    words = [_w("\nヨ", 0.0, 0.3), _w("ル", 0.3, 0.6), _w("オ", 0.6, 0.9), _w(" アサ", 1.0, 1.4), _w("エ", 1.4, 1.6)]
+    subs, _ = suno_kana.lines_to_ass(["夜を朝へ"], words)
+    assert [t for t, _ in _starts(subs)] == ["夜", "を", "朝", "へ"]
+    assert dict(_starts(subs))["を"] == 0.6
+
+
+def test_suno_kana_shares_a_word_evenly_and_keeps_the_tail_of_a_line():
+    from beatmv import suno_kana
+
+    # "ガリノ" is one Suno word: its three kana share its span. "リ\nト" carries the last kana of the first line
+    words = [_w("\nア", 0.0, 0.3), _w("ガリノ", 0.3, 0.6), _w("モ", 0.6, 1.0),
+             _w("リ\nト", 3.0, 3.4), _w("ウ", 3.4, 3.8)]
+    subs, _ = suno_kana.lines_to_ass(["あがりのもり", "とう"], words)
+    assert _starts(subs, 0) == [("あ", 0.0), ("が", 0.3), ("り", 0.4), ("の", 0.5), ("も", 0.6), ("り", 1.0)]
+    assert subs[0].end / 1000 == pytest.approx(1.5), "the tail り is held TAIL_HOLD after the word before it"
+    assert _starts(subs, 1)[0] == ("と", 3.0)
+
+
+def test_suno_kana_keeps_the_last_word_before_the_outro_tag():
+    from beatmv import suno_kana
+
+    words = [_w("\nヒ", 0.0, 0.5), _w("オ\n\n[Outro: instrumental]\n\n", 2.0, 3.0)]
+    subs, warnings = suno_kana.lines_to_ass(["灯を"], words)
+    assert _starts(subs) == [("灯", 0.0), ("を", 2.0)]
+    assert len(warnings) == 1 and "1.5 s" in warnings[0], "a 1.5 s pause inside a line is listed for checking"
+
+
+def test_suno_kana_refuses_lines_that_do_not_match():
+    from beatmv import suno_kana
+
+    words = [_w("\nア", 0.0, 0.3), _w("メ", 0.3, 0.6)]
+    with pytest.raises(ValueError, match="line 1"):
+        suno_kana.lines_to_ass(["いぬ"], words)  # the display's kana are not what was sung
+    with pytest.raises(ValueError, match="2 display lines"):
+        suno_kana.lines_to_ass(["雨", "雪"], words)
+
+
+def test_suno_kana_is_an_accepted_aligner(tmp_path):
+    assert songmod.load(write_song(tmp_path, lyrics_aligner='"suno_kana"')).lyrics_aligner == "suno_kana"
