@@ -248,7 +248,7 @@ songs/<slug>/
 
 ```sh
 .venv/bin/python -m beatmv analyze  songs/<slug>   # Demucs でドラム分離 → キック/スネアの打点、波形用の音量
-.venv/bin/python -m beatmv align    songs/<slug>   # lyrics.ass を作る（suno: Suno の時刻合わせだけ / hybrid: Whisper と組み合わせる）
+.venv/bin/python -m beatmv align    songs/<slug>   # lyrics.ass を作る（suno: Suno の時刻合わせだけ / suno_kana: Suno のカナの時刻を漢字の歌詞に / hybrid: Whisper と組み合わせる）
 .venv/bin/python -m beatmv render   songs/<slug>   # MV（既定 4K。--scale 1 で 1080p、--preview 45,100 で静止画。--preview は --from / --to と併用不可）
 .venv/bin/python -m beatmv render   songs/<slug> --portrait --from 132 --to 198.2   # ショート: 1080x1920、その区間だけ
 .venv/bin/python -m beatmv srt      songs/<slug>   # YouTube 字幕（SRT）
@@ -264,7 +264,8 @@ songs/<slug>/
 - **`dnb` はスネアからキックとゴーストノートを外す。** キックは `rock` と同じ基準で取り、スネアからはキックと重なる打点と、立ち上がりの弱い打点（ゴーストノート・ハット）を外します。外した打点はスネアの段に水色の小さな星で出し、画面中央の縦線は光らせません（星の半径は、強いスネアの四角より目立たず、スマホの大きさでも見える 11）。DnB の 6 曲で、スネアが 1 小節に光る回数が 2.5〜3.4 回から 1.3〜1.8 回になり、2・4 拍に乗る割合が上がりました（Half-Time の曲は 3 拍目なので上がりません）。
 - **ベースは音量の帯で見せる**（`bass_band = true` のときだけ）。Demucs の 4 分割でベースを取り出し、その音量に合わせて波形の下の横帯が伸び縮みします。打点（1 音ずつ）にしないのは、裏打ちのベースが続くと音の立ち上がりが立たず、鳴っている音の一部しか拾えなかったためです。クラップとハイハットを分けて 3 段目にする案も試しましたが、2・4 拍のクラップはキックと重なって区別できず、裏拍のハイハットも一部しか取れなかったので入れていません。
 - **配色は `styles/` を burn_subs と共有する**（`style`、既定 `karaoke_blue`）。beatmv が使うのは色だけで、`primary_color`（歌った部分）・`secondary_color`（まだの部分）・`outline_color`（縁取りと背景の下の色）に加え、beatmv だけの `accent_color`（リング・波形・タイムライン・曲名。省略時は `primary_color`）と `background_top`（背景の上の色）を読みます。`font_size` などの大きさは beatmv では使いません（文字の大きさは beatmv のレイアウトで決めるため）。
-- **カナで歌わせた曲は `lyrics_aligner = "hybrid"` にし、`beatmv align` で lyrics.ass を作る。** 行の開始と終わりは Suno の時刻合わせ（`work/<slug>/suno_alignment.json`）、行の中の文字の配分は Whisper（`work/<slug>/lyrics.whisper.ass`、align_subtitles.py の出力。このファイルがなければ、`beatmv align` が `work/<slug>/lyrics.txt`（または `--lyrics`）から時刻合わせを自分で実行します。`analyze` が分離したボーカルがあればそれに合わせます）から取ります。Suno は行の位置が正確でも文字がカナで返り、Whisper は漢字に時刻を振れても行の両端がずれるためです。行数が合わなければ推測で合わせずに中断し、ずれの大きい行は「確認」として出すので、その行だけ耳で確かめます。
+- **カナで歌わせた曲は `lyrics_aligner = "suno_kana"` にし、`beatmv align` で lyrics.ass を作る。** 表示する歌詞（漢字）を 1 行 = 歌った 1 行で `work/<slug>/lyrics.txt` に、Suno の時刻合わせの応答をそのまま `work/<slug>/suno_alignment.json` に置きます。Suno はカナ 1〜2 文字ごとに時刻を返すので、各漢字をその読みのカナが歌われた時刻で塗ります。Whisper も辞書も使いません（表示のかなを目印に突き合わせ、助詞の を・へ・は は歌ったとおりの オ・エ・ワ と一致させます）。歌ったカナと合わない行があれば一覧を出して止まり、行の中で 1 秒を超える間は耳で確かめる候補として出します。Wet Rails では、手で合わせた表と 289 文字中 283 文字が 0.1 秒以内で一致しました。
+- **`hybrid` は同じ曲向けの以前のやり方** 行の開始と終わりは Suno の時刻合わせ（`work/<slug>/suno_alignment.json`）、行の中の文字の配分は Whisper（`work/<slug>/lyrics.whisper.ass`、align_subtitles.py の出力。このファイルがなければ、`beatmv align` が `work/<slug>/lyrics.txt`（または `--lyrics`）から時刻合わせを自分で実行します。`analyze` が分離したボーカルがあればそれに合わせます）から取ります。Suno は行の位置が正確でも文字がカナで返り、Whisper は漢字に時刻を振れても行の両端がずれるためです。行数が合わなければ推測で合わせずに中断し、ずれの大きい行は「確認」として出すので、その行だけ耳で確かめます。
 - **英語で歌わせた曲は `lyrics_aligner = "suno"` にし、`beatmv align` で lyrics.ass を作る。** Suno の時刻合わせの語がそのまま字幕になるので、語ごとに塗ります。語と語の間の空きは文字のない区間にするので、次の語は歌い出しから塗り始めます。Suno は語の後ろの句読点を次の語の頭に付けて返す（`ready` / `! Go`）ので、句読点は前の語へ戻してから塗ります。戻さないと、`!` だけが次の語まで白く残ります。時刻合わせが崩れることもある（最後の 2 行を 1 秒に詰める、1 語を 12 秒伸ばすなど）ので、分離した声の音量（`vocal_rms.npy`）と見比べ、合わなければ `suno_alignment.json` を直してから `beatmv align` します。
 - **歌詞の訳は `translation` で出す**（song.toml と同じディレクトリのテキスト。字幕 1 行につき 1 行、空の行はその行の訳を出さない）。訳は塗らずに歌詞の下へ行と一緒に出し、そのあいだは次の行の予告を出しません。行数が字幕と違えば中断します。`beatmv srt` は訳の SRT（`<slug>.ja.srt`）も書きます。
 - **英字だけの行は英字専用の書体で描く。** 日本語を含む行はヒラギノ、英字だけの行（英語の歌詞・英訳・曲名・セクション名など）は Helvetica Neue です。英字専用の書体は同じポイント数だとヒラギノの英字より小さく見えるので、行の幅がそろうよう 1.18 倍にしています。`BEATMV_EN_FONT=sf`（SF Pro、1.25 倍）か `hiragino`（従来どおり）で替えられます。

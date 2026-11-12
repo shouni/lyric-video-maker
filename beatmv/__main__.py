@@ -3,7 +3,7 @@ import argparse
 import json
 import os
 
-from beatmv import drums, lyrics, render, song as songmod, suno_align, thumbnail
+from beatmv import drums, lyrics, render, song as songmod, suno_align, suno_kana, thumbnail
 
 
 def main():
@@ -36,12 +36,13 @@ def main():
     t.add_argument("--portrait", action="store_true", help="the Short's cover instead (1080x1920)")
 
     al = sub.add_parser("align",
-                        help="write lyrics.ass: suno uses Suno's alignment only, hybrid combines it with Whisper")
+                        help="write lyrics.ass: suno uses Suno's alignment only, suno_kana maps Suno's kana onto "
+                             "the display lyrics, hybrid combines Suno with Whisper")
     al.add_argument("song_dir")
     al.add_argument("--whisper", help="output of align_subtitles.py (default: work/<slug>/lyrics.whisper.ass; "
                                       "hybrid runs align_subtitles.py itself when the file is missing)")
-    al.add_argument("--lyrics", help="lyrics for that run: txt, one line per subtitle line, or ASS "
-                                     "(default: work/<slug>/lyrics.txt)")
+    al.add_argument("--lyrics", help="display lyrics for suno_kana (txt, one line per sung line), or the lyrics for "
+                                     "hybrid's Whisper run (txt or ASS) (default: work/<slug>/lyrics.txt)")
     al.add_argument("--model", default="large-v3", help="Whisper model for that run (default: large-v3)")
     al.add_argument("--language", default="ja", help="lyrics language for that run (default: ja)")
     al.add_argument("--suno", help="Suno's alignment JSON (default: work/<slug>/suno_alignment.json)")
@@ -78,6 +79,22 @@ def main():
         subs = suno_align.words_to_ass(suno_align.load_words(args.suno or song.work("suno_alignment.json")))
         subs.save(song.lyrics)
         print(f"{song.lyrics}  {len(subs)} lines (Suno word timings as they are)")
+    elif args.cmd == "align" and song.lyrics_aligner == "suno_kana":
+        lyrics_in = args.lyrics or song.work("lyrics.txt")
+        if not os.path.exists(lyrics_in):
+            raise SystemExit(f"Error: no display lyrics: {lyrics_in}\n"
+                             "       Put the lyrics as shown (kanji) there, one line per sung line, or pass --lyrics.")
+        with open(lyrics_in, encoding="utf-8") as f:
+            display = f.read().splitlines()
+        try:
+            subs, warnings = suno_kana.lines_to_ass(
+                display, suno_align.load_words(args.suno or song.work("suno_alignment.json")))
+        except ValueError as exc:
+            raise SystemExit(f"Error: {exc}") from None
+        subs.save(song.lyrics)
+        print(f"{song.lyrics}  {len(subs)} lines (Suno's kana timings on the display lyrics)")
+        for w in warnings:
+            print(f"  check: {w}")
     elif args.cmd == "align":
         whisper = args.whisper or song.work("lyrics.whisper.ass")
         suno = args.suno or song.work("suno_alignment.json")

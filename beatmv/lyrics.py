@@ -1,6 +1,6 @@
 """Split ASS lyrics with \\k into per-character (token) timings. Rendering and SRT use the same timings.
 
-The ASS comes from one of three places (lyrics_aligner in song.toml):
+The ASS comes from one of these (lyrics_aligner in song.toml):
 - suno: built from Suno's lyric alignment (audio-lyrics-alignment). A line starts exactly where it is sung.
 - whisper: lyrics aligned to the separated vocal with align_subtitles.py. For songs sung from kana, Suno's
   alignment also comes back in kana, so this is what gives kanji subtitles. align_subtitles.py pulls each
@@ -8,6 +8,8 @@ The ASS comes from one of three places (lyrics_aligner in song.toml):
   (e.g. \\k156). Filling it as is would colour the character before it is sung, so when the first
   character is longer than FIRST_SEG_MAX, filling starts FIRST_SEG_WIPE seconds before its end.
   On 駆け抜けろ Midnight that landed 0.16–0.29 s ahead of where Suno's alignment says the line is sung.
+- suno_kana: built by `python -m beatmv align` from Suno's kana timings mapped onto the display (kanji) lyrics
+  without Whisper (beatmv/suno_kana.py). Line starts are where they are sung, so no fix is applied.
 - hybrid: built by `python -m beatmv align` with the line span from Suno and the timing inside the line
   from Whisper (beatmv/suno_align.py). The first character is already trimmed there, so no fix is applied.
 """
