@@ -1,4 +1,4 @@
-"""Tests for burn_subs.py's pure functions (no drawing or ffmpeg)."""
+"""Tests for burn_subs.py (no ffmpeg; the layout and placement tests draw with a real font)."""
 
 import json
 import os
@@ -238,16 +238,18 @@ class TestLayout:
         spaced = bs.measure_line(draw, "abcd", font, 10)
         assert spaced == pytest.approx(plain + 30)
 
-    def test_best_split_uses_space_boundaries_when_present(self, draw, font):
-        assert bs.best_split(draw, "hello world", font, 0) == ("hello", "world")
+    def test_best_split_index_uses_space_boundaries_when_present(self, draw, font):
+        units = list("hello world")
+        idx = bs.best_split_index(draw, units, font, 0)
+        assert ("".join(units[:idx]).strip(), "".join(units[idx:]).strip()) == ("hello", "world")
 
-    def test_best_split_falls_back_to_char_boundaries(self, draw, font):
-        l1, l2 = bs.best_split(draw, "あいうえおかきくけこ", font, 0)
-        assert l1 + l2 == "あいうえおかきくけこ"
-        assert l1 and l2
+    def test_best_split_index_falls_back_to_char_boundaries(self, draw, font):
+        units = list("あいうえおかきくけこ")
+        idx = bs.best_split_index(draw, units, font, 0)
+        assert 0 < idx < len(units)
 
-    def test_best_split_returns_empty_second_line_for_single_char(self, draw, font):
-        assert bs.best_split(draw, "あ", font, 0) == ("あ", "")
+    def test_best_split_index_is_none_when_nothing_can_be_split(self, draw, font):
+        assert bs.best_split_index(draw, ["あ"], font, 0) is None
 
     def test_shrink_to_fit_reduces_size_until_it_fits(self, draw, font):
         fitted, size = bs.shrink_to_fit(draw, ["あいうえお"], font, 0, 100)

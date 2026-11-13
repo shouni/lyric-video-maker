@@ -119,8 +119,8 @@ def main():
 def run_whisper(song, out, args):
     """Run align_subtitles.py's alignment to make the Whisper ASS that hybrid needs (it used to be a manual step).
 
-    The audio is the separated vocal when `analyze` has already made it (more accurate than the full mix),
-    otherwise the song's audio; Demucs is not run here.
+    The audio is the separated vocal when the 4-stem split already exists (`analyze` makes it for bass_band or
+    wave = "vocals"; more accurate than the full mix), otherwise the song's audio; Demucs is not run here.
     """
     lyrics_in = args.lyrics or song.work("lyrics.txt")
     if not os.path.exists(lyrics_in):

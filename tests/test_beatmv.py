@@ -1,7 +1,9 @@
-"""Tests for beatmv's pure logic (song settings, drum rules, lyric timing, SRT).
+"""Tests for beatmv: song settings, drum rules and snare rolls, lyric timing, SRT, the three aligners, palettes,
+layouts, clips and thumbnail backgrounds.
 
-Real song settings (songs/) are not in git, so a made-up song in tests/fixtures/song is used. Rendering puts
-hits and loudness in a temporary directory and checks only the resolution scale (not the picture itself).
+Real song settings (songs/) are not in git, so a made-up song in tests/fixtures/song is used. Rendering tests put
+hits and loudness in a temporary directory and check frame sizes, where text lands and which pixels change (not
+the picture as a whole).
 """
 
 import json
@@ -103,7 +105,7 @@ def test_edm_rule_keeps_kicks_whose_attack_reaches_the_mids():
 
 def test_trance_rule_does_not_count_a_kick_as_perc():
     # with edm the kick's attack also met the percussion condition,
-    # so hits showed in both rows (131 / 258 on 夜明けの境界線)
+    # so hits showed in both rows (131 / 258 on one EDM song)
     t = np.array([1.0, 2.0, 3.0])
     lr = np.array([3.2, 2.4, -0.9])  # 1, 2: kicks / 3: off-beat hat
     mr = np.array([3.4, 4.8, 1.3])
@@ -268,7 +270,7 @@ def test_unknown_style_in_song_is_rejected(tmp_path):
         songmod.load(write_song(tmp_path, style='"no_such_style"'))
 
 
-# --------------------------------------------------------------------------- hybrid（Suno + Whisper）
+# --------------------------------------------------------------------------- hybrid (Suno + Whisper)
 
 def suno_word(word, start, end):
     return {"word": word, "start_s": start, "end_s": end, "success": True, "p_align": 1}
@@ -279,8 +281,8 @@ def suno_word(word, start, end):
 SUNO_WORDS = [
     suno_word("[Intro: instrumental only]\n\n\n[Verse: sparse breakbeat]\nカ", 16.46, 16.65),
     suno_word("ケル", 16.65, 19.37),
-    suno_word("\nOver", 58.90, 59.29),
-    suno_word("clock", 59.29, 60.46),
+    suno_word("\nSky", 58.90, 59.29),
+    suno_word("line", 59.29, 60.46),
     suno_word("k\n\n[Outro: instrumental only]\n\n\n[End]\n", 60.46, 61.00),
 ]
 
@@ -298,7 +300,7 @@ def test_hybrid_keeps_whisper_shares_inside_the_suno_span(tmp_path):
     # line 2's last character runs 3 s into the interlude
     ass = write_ass(tmp_path / "w.ass", [
         (14000, 18300, r"{\k200}駆{\k150}け{\k80}る"),
-        (57000, 62000, r"{\k50}Over{\k150}clock{\k300}!"),
+        (57000, 62000, r"{\k50}Sky{\k150}line{\k300}!"),
     ])
     subs, warnings = suno_align.merge(str(ass), SUNO_WORDS)
 
@@ -334,10 +336,10 @@ def test_hybrid_is_an_accepted_aligner_and_skips_the_whisper_wipe(tmp_path):
 
 @pytest.mark.parametrize("text,hook", [
     ("Override! Override!", True),
-    ("Overclock the heart", True),
+    ("Shatter the silence", True),
     ("Armor Reboot!", True),
-    ("Hard Reset! Hard Reset!", True),
-    ("Afterglow, 鳴り止まないよ", False),       # a line with Japanese is not a hook shout
+    ("Wake up! Wake up!", True),
+    ("Starlight, 鳴り止まないよ", False),       # a line with Japanese is not a hook shout
     ("Run through the night and never stop", False),  # an English line of more than four words
     ("もっと、もっと", False),
     ("！？", False),
@@ -501,7 +503,7 @@ def test_portrait_keeps_the_timeline_inside_the_frame():
         assert layout.title_y < layout.wave_y < layout.lyric_y < layout.tl_y < layout.h
 
 
-LONG_WORDS = "Overclock the heart and run past every limit we were given tonight".split()
+LONG_WORDS = "Shatter the silence and run past every limit we were given tonight".split()
 LONG_LINE = "".join(rf"{{\k25}}{' ' if k else ''}{w}" for k, w in enumerate(LONG_WORDS))
 
 
@@ -632,7 +634,7 @@ def test_wrapped_lyric_and_translation_stay_above_the_timeline(tmp_path):
     n = len(pysubs2.load(os.path.join(FIXTURE, "lyrics.ass")))
     song_dir = fixture_song(tmp_path, extra_toml='translation = "ja.txt"\n',
                             extra_events=[(20000, 23000, LONG_LINE)])
-    long_translation = "限界を超えて心臓をオーバークロックしろ、今夜与えられたすべての壁の向こうまで走り抜けろ"
+    long_translation = "限界を超えて心臓の鼓動を加速させろ、今夜与えられたすべての壁の向こうまで走り抜けろ"
     with open(os.path.join(song_dir, "ja.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(["訳"] * n + [long_translation]) + "\n")
     C = render.configure(song_dir, 1, portrait=True)

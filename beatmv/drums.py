@@ -3,16 +3,16 @@
 Demucs splits drums from the rest. Onsets are taken from the whole drum stem first, then each hit is
 assigned by comparing the rise in the low band (40–120 Hz) with the rise in the snare band
 (1–4 kHz plus the 150–250 Hz body). Picking peaks per band separately made the snare band pick up the
-kick's attack too, so both rows came out almost identical (540 / 558 hits on 境界の調律者).
+kick's attack too, so both rows came out almost identical (540 / 558 hits on one rock song).
 
 The rule depends on the song's drums (drum_rule in song.toml):
 - rock: a kick when the low band rises more than the mids, a snare when the snare band exceeds 0.6× the
-  low band. On 境界の調律者's first chorus this split kicks onto beats 1 and 3 and snares onto 2 and 4.
+  low band. On that song's first chorus this split kicks onto beats 1 and 3 and snares onto 2 and 4.
 - edm: a four-on-the-floor kick's attack is strong in 1–4 kHz too (median rise 3.1–3.5), so the rock rule
   kept only 84 kicks (駆け抜けろ Midnight). A rising low band makes a kick; hits where the mids exceed the
   low band by more than 1.2 are percussion (claps, hats, ticks). Not only snares, so it is labelled PERC.
 - trance: the edm rule, but hits that became kicks are not counted as percussion. With edm the kick's
-  attack also meets the mid condition: on 夜明けの境界線, 131 of 258 percussion hits sat on a kick (spread
+  attack also meets the mid condition: on one EDM song, 131 of 258 percussion hits sat on a kick (spread
   evenly over beats 1–4, so not claps on 2 and 4; 駆け抜けろ Midnight had 48 %). Only the off-beat hats
   remain, so the ring (on-beat) and the vertical lines (off-beat) alternate. Claps on the kick are lost too,
   so songs that have them stay on edm.
@@ -20,7 +20,7 @@ The rule depends on the song's drums (drum_rule in song.toml):
   weakest DNB_GHOST_QUANTILE of the snare-band rises. DnB kicks have a hard attack, and with rock the
   downbeat kick also showed as a snare 43–89 times per song. Breakbeat ghost notes and hats were picked up
   too, so the snare lit 2.5–3.4 times per bar (six Digital Armor Style songs, 2026-11-03). With dnb it is
-  1.3–1.8, and the share on beats 2 and 4 rose in 5 of 6 songs (Overclock 57 % → 61 %, Armor Reboot
+  1.3–1.8, and the share on beats 2 and 4 rose in 5 of 6 songs (one song 57 % → 61 %, Armor Reboot
   51 % → 67 %). Half-time songs put the snare on beat 3, so their share does not rise (Signal Lost
   36 % → 45 %). The dropped weak hits are kept as `ghost` in drums.json and drawn small on the snare row
   (they do not light the centre line).
@@ -77,8 +77,8 @@ def dnb_split(t, lr, mr):
 # A run of kicks this close together (eighth notes at the song's tempo, with slack) and at least this long is
 # listed as a possible snare roll. The detector calls a roll's hits kicks when their low band rises more than
 # the mids, from almost nothing. No measured feature told rolls from real kick runs with any margin (five runs
-# judged by ear on 2026-11-12: Power On's 126 s roll scored like the real kick runs of Only the Pulse and
-# Beyond the Firewall), so the runs are only listed, and the ones heard as rolls go in song.toml's snare_rolls.
+# judged by ear on 2026-11-12: one song's 126 s roll scored like the real kick runs of two
+# other songs), so the runs are only listed, and the ones heard as rolls go in song.toml's snare_rolls.
 ROLL_GAP_EIGHTHS = 1.15
 ROLL_MIN_HITS = 6
 
@@ -171,8 +171,8 @@ def separate4(song, stem):
 def separate_bass(song):
     """Create bass.wav (Demucs 4-stem split). Does nothing if already separated.
 
-    Bass is drawn as loudness, not hits. Picking single notes on アクセルを踏み抜け put them within 40 ms of the
-    eighth-note grid (97 %), but a running off-beat line has weak attacks and only part of it was found
+    Bass is drawn as loudness, not hits. Picking single notes on one EDM song put them within 40 ms of
+    the eighth-note grid (97 %), but a running off-beat line has weak attacks and only part of it was found
     (10–41 of about 54 notes in 20 s). Loudness misses nothing.
     """
     return separate4(song, "bass")

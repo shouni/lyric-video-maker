@@ -1,4 +1,4 @@
-"""Tests for burn_subs_video.py's display-span calculation."""
+"""Tests for burn_subs_video.py's display spans, events and transparent overlay track (no ffmpeg)."""
 
 import os
 import sys

@@ -136,7 +136,7 @@ def make_youtube_cover(frame, title, artist, size=(1280, 720), artist_color=ARTI
 
 
 def make_short_cover(frame, title, artist, size=(1080, 1920), artist_color=ARTIST_COLOR):
-    """9:16 Shorts cover: the 16:9 frame centred on a blurred background, title below."""
+    """9:16 Shorts cover: the 16:9 frame on a blurred background (its centre at 42 % of the height), title below."""
     w, h = size
 
     bg = center_crop_to_ratio(frame, w, h).resize(size, Image.LANCZOS)

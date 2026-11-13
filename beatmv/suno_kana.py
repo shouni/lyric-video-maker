@@ -4,7 +4,7 @@ Songs sung from kana come back from Suno's alignment in kana, one or two charact
 The subtitles show the lyrics as written (kanji). This maps one onto the other without Whisper:
 
 1. Suno's words are split into characters. A word's span is shared evenly by its characters, and a small kana
-   (ャュョァィゥェォ) joins the character before it, so the units are morae.
+   (ャュョァィゥェォヮ) joins the character before it, so the units are morae.
 2. Each display line is aligned to its Suno line by dynamic programming. A kana in the display must equal the
    sung mora (hiragana and katakana compare equal), so the display's kana anchor the alignment. A run of other
    characters (kanji, digits) takes one or more morae: it is what was sung between the anchors. Among several
@@ -14,7 +14,7 @@ The subtitles show the lyrics as written (kanji). This maps one onto the other w
    several kanji (最終 さい/しゅう) is not known without a dictionary; it is an estimate.
 
 No dictionary is used: the sung kana are the truth (a dictionary misreads names and 当て字), and a display line
-whose kana do not match what Suno heard is listed for checking rather than guessed. On Wet Rails (2026-11-12)
+whose kana do not match what Suno heard is listed for checking rather than guessed. On one song (2026-11-12)
 this reproduced the hand-timed table of retime_from_suno.py, which hybrid had been 1 s off on many lines.
 Characters wipe over their own sung span, with an empty \\k for gaps longer than GAP_TOKEN, as in English
 (suno_align.words_to_ass).
@@ -26,7 +26,7 @@ import pysubs2
 from beatmv.suno_align import GAP_TOKEN, _TAG
 
 # A newline at the end of a word belongs to the previous line, which has no later word to time it by: each of
-# those characters is held this long after the previous word (Wet Rails: ぬくもり's り, 握る's る).
+# those characters is held this long after the previous word (seen on the last kana of two words).
 TAIL_HOLD = 0.5
 # A character starting this long after the one before it in the same line is listed for checking by ear.
 GAP_WARN = 1.0
@@ -35,7 +35,7 @@ MAX_MORAE_PER_CHAR = 5
 
 _SMALL = set("ァィゥェォャュョヮ")
 _NO_START = set("ンッー")  # a kanji's reading never starts with these
-# Characters drawn but not sung: they join the \\k of the character before them.
+# Characters drawn but not sung: they join the \k of the character before them.
 _SILENT = re.compile(r"[\s、。，．,.!?！？「」『』（）()…・~〜\-–—♪\"'“”‘’:：;；]")
 _KANA = re.compile(r"[ぁ-ゖァ-ヺー]")
 _LATIN = re.compile(r"[A-Za-z]")
@@ -198,8 +198,8 @@ def lines_to_ass(display_lines, words):
     """Build an SSAFile from the display lines and Suno's words, and the lines to check by ear.
 
     Raises ValueError listing every line that does not align (and when the line counts differ), so nothing is
-    guessed. A character that starts more than GAP_WARN after the one before it is listed: on Wet Rails both
-    such characters (始める's る, 追い越して's て) were Suno placing the kana 1.2-1.5 s late, fixed by ear.
+    guessed. A character that starts more than GAP_WARN after the one before it is listed: on one song both
+    such characters (the last kana of two verbs) were Suno placing the kana 1.2-1.5 s late, fixed by ear.
     """
     sung = sung_lines(words)
     display = [ln.strip() for ln in display_lines if ln.strip()]

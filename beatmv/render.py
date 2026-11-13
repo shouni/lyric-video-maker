@@ -44,7 +44,7 @@ FPS = 30
 EN_FONT = os.environ.get("BEATMV_EN_FONT", "helvetica")
 _EN = {
     # The third value is a size factor. A Latin typeface looks 15–20 % smaller than Hiragino's Latin letters at the
-    # same point size, so it is scaled up to keep the line width (matched on the width of "Overclock the heart")
+    # same point size, so it is scaled up to keep the line width (matched on the width of a three-word hook line)
     "helvetica": ("/System/Library/Fonts/HelveticaNeue.ttc", {"bold": 1, "semibold": 10, "light": 7}, 1.18),
     "sf": ("/System/Library/Fonts/SFNS.ttf", {"bold": "Bold", "semibold": "Semibold", "light": "Regular"}, 1.25),
 }
@@ -76,13 +76,15 @@ def font_for(text, weight, size):
     f.set_variation_by_name(face)
     return f
 
-WHITE = (255, 255, 255)  # section name, labels, percussion lines, next line (white whatever the palette)
+# Percussion hits on the timeline. The section name, labels, percussion lines and next line are white whatever
+# the palette too, written as literals with their own alpha.
+WHITE = (255, 255, 255)
 
 LINE_LINGER = 1.5  # longest a line stays after it is sung (s)
-LYRIC_FONT = 84    # lyric text size (for 1920x1080; long lines shrink to 48)
+LYRIC_FONT = 84    # lyric text size in design px, both layouts (long lines shrink to LYRIC_FLOOR)
 HOOK_FONT = 104    # hook line text size: over 20 % larger than a normal line, shown as a shout
 HOOK_FADE = 0.5    # seconds over which the waveform shifts to hook_color around a hook line
-TRANS_FONT = 58    # translation size, 70 % of the lyric (84). 46 was called too small in the video (Only the Pulse)
+TRANS_FONT = 58    # translation size, 70 % of the lyric (84). 46 was called too small in the first translated video
 TRANS_GAP = 30     # gap from the bottom of the lyric to the translation
 # The translation is drawn semibold (W6): W3 loses its thin strokes once outlined
 # ghost-note star radius. 8 was invisible; 14 stood out more than a strong snare's square (radius 7–9)
@@ -90,7 +92,7 @@ GHOST_STAR_R = 11
 LYRIC_FLOOR = 48   # smallest lyric size; a line still too wide at this size wraps into two rows
 ROW_GAP = 10       # gap between the two rows of a wrapped lyric or translation
 # A clip (render --from / --to) fades over these instead of the song's fade_in / fade_out, unless it starts or
-# ends where the song does. Values from the Overclock Short: the entry is sung at the head of the clip, so
+# ends where the song does. Values from the first Short cut this way: the entry is sung at the head of the clip, so
 # the fade-in only hides the cut.
 CLIP_FADE_IN = 0.08
 CLIP_FADE_OUT = 1.4
@@ -141,10 +143,10 @@ LANDSCAPE = Layout(
     lyric_y=740, lyric_margin=200, next_dy=90, next_font=40,
     tl_y=935, tl_x0=420, tl_x1=1500, tl_span=2.5, tl_scale=1.3, dots=140,
 )
-# 9:16 (Shorts). The values are those of the per-song Shorts scripts this replaces (Overclock's
+# 9:16 (Shorts). The values are those of the per-song Shorts scripts this replaces (the first one's
 # build_short.py): the header starts below the Shorts top bar and the timeline ends above the bottom UI.
 # A phone shows 1080 px across the full screen width, so text can be smaller in design px than in landscape.
-# tl_scale is 1.3 as in landscape and the English series' Shorts (Only the Pulse's build_short_en.py): Overclock's
+# tl_scale is 1.3 as in landscape and the later Shorts (build_short_en.py): the first Short's
 # 1.1 predates the 2026-11-08 change that enlarged the timeline because KICK / SNARE were unreadable on a phone.
 PORTRAIT = Layout(
     name="portrait", w=1080, h=1920,
@@ -177,7 +179,7 @@ class Ctx:
         self.PLAYHEAD_X = (self.TL_X0 + self.TL_X1) // 2
         # Lowest y the lyric block (lyric rows + translation rows) may reach: 8 px above the timeline's row
         # labels. Single-row lines with a translation already end up to 13 px below the playhead's top in
-        # landscape (new_morning, collision), so the playhead's top cannot be the limit without moving them.
+        # landscape (two songs), so the playhead's top cannot be the limit without moving them.
         self.TEXT_FLOOR = int(self.TL_Y - px(12 * L.tl_scale) - px(8))
 
         # the span drawn (the whole song, or a clip) and the fades at its two ends
@@ -323,7 +325,7 @@ def text_image(text, font, color, stroke):
 
 def line_images(i):
     """Build and cache line i's rows: per row (unsung image, sung image, each token's right edge, first token
-    index, end token index). Unsung = white, sung = light blue.
+    index, end token index). The colours are the palette's unsung and sung (white and light blue in karaoke_blue).
 
     Hook lines (`Override! Override!` etc., lyrics.is_hook_line) use larger text and fill with hook_color,
     so the shout that opens a chorus stands out by size and colour alone, without flashing or beat zoom.
@@ -453,8 +455,9 @@ def draw_bass(d, t):
 
 
 def draw_ghost_star(d, x, y, passed, edge):
-    """Ghost note: a small four-pointed star, in the palette's accent (light blue) so its shape and colour set it
-    apart from a strong snare (white square). Faint outline before the playhead, filled after (no glow or flashing)."""
+    """Ghost note: a small four-pointed star, in the palette's accent (light blue in karaoke_blue) so its shape and
+    colour set it apart from a strong snare (white square). Faint outline before the playhead, filled after (no glow
+    or flashing)."""
     px = C.px
     ro = px(GHOST_STAR_R * C.L.tl_scale)
     ri = ro * 0.32
@@ -562,7 +565,7 @@ def draw_lyrics(base, t):
     trans_h = px(TRANS_GAP) + sum(im.height for im in trans) + gap * (len(trans) - 1) if trans else 0
     top = C.LYRIC_Y - block_h // 2
     # A wrapped lyric over a wrapped translation is taller than the room above the timeline (portrait: a
-    # two-row translation alone ends 21 px above the KICK label on Overclock). Move the whole block up by
+    # two-row translation alone ends 21 px above the KICK label on one song). Move the whole block up by
     # what would overlap; the amount depends only on the line, so it does not move while the line is shown.
     top -= max(0, top + block_h + trans_h - C.TEXT_FLOOR)
     y = top + dy
@@ -635,7 +638,7 @@ def draw_translation(base, rows, lyric_bottom, appear):
 
 
 def draw_motion(base, t, chorus):
-    """Dots, ring and lines (over a blurred glow). The thumbnail background uses this too."""
+    """Dots, ring, lines and bass band (over a blurred glow). The thumbnail background uses this too."""
     fx = Image.new("RGBA", (C.W, C.H), (0, 0, 0, 0))
     d = ImageDraw.Draw(fx)
     draw_dots(d, t)
@@ -660,7 +663,7 @@ def render_image(t):
     draw_instrumental(base, t)
     draw_lyrics(base, t)
 
-    # fade the start and end to navy (never to white)
+    # fade the start and end to the palette's background_top (navy in karaoke_blue; never to white)
     fade = min(1.0, (t - C.T0) / C.fade_in, (C.T1 - t) / C.fade_out)
     if fade < 1:
         base = Image.blend(Image.new("RGBA", (C.W, C.H), C.pal.background_top + (255,)), base, max(0.0, fade))
@@ -745,7 +748,7 @@ def render_video(song_dir, scale, portrait=False, clip=None):
         if t0 > 0:  # a clip cut out of the middle also fades in, to hide the cut
             afade = f"afade=t=in:d={C.fade_in},{afade}"
     # The output is cut with -t at the audio length, not -shortest. When the length is not a whole number of
-    # frames (Power On, 263.16 s = 7894.8 frames), -shortest dropped the last 3 frames whether the video was
+    # frames (one song, 263.16 s = 7894.8 frames), -shortest dropped the last 3 frames whether the video was
     # one frame longer or shorter than the audio; -t keeps all of them and the audio at its exact length.
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-i", silent,

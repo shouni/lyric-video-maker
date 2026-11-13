@@ -1,5 +1,5 @@
 """YouTube thumbnail background (1280x720, or 1080x1920 for a Short's cover with portrait=True): one frame of the
-video with only the ring, vertical lines and waveform.
+video with only render.draw_motion's shapes (dots, kick ring, percussion lines, bass band) and the waveform.
 
 No lyrics, header or timeline. The title and artist name are not drawn here; the composing pipeline adds
 them the same way it titles the cover art, so the thumbnail matches the cover.
