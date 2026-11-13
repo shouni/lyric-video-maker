@@ -18,9 +18,10 @@ pip-log.txt
 .pip_log
 
 # Python package manager files
-poetry.lock  # remove this line and commit it if you use Poetry
+# If you use Poetry, remove the next line and commit the lock file.
+poetry.lock
 
-# Pipenv files (lock files are usually committed)
+# Pipenv lock file (Pipenv is not used here; there is no Pipfile)
 Pipfile.lock
 
 # Conda environment directory

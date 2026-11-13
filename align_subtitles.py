@@ -249,7 +249,7 @@ def build_aligned_subs(subs_orig, line_char_map, verbose=True):
         line_end_s = char_timings[-1]["end"] + TAIL_MS / 1000
 
         new_event = event.copy()
-        # first line only: if the input ASS is slightly earlier than Whisper, keep it (the sung entry)
+        # first line only: an input ASS start slightly earlier than Whisper's is kept (see LEAD_IN_TOLERANCE_MS)
         if valid_line_idx == 1 and 0 < ms(line_start_s) - event.start <= LEAD_IN_TOLERANCE_MS:
             new_event.start = event.start
         else:

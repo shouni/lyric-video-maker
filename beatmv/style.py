@@ -8,9 +8,11 @@ layout, and the style's values would break it).
 | primary_color | sung colour | same |
 | secondary_color | unsung colour | same |
 | outline_color | outline | outline and the bottom of the background gradient |
-| accent_color | (unused) | ring, waveform, dots, grid, beat squares, timeline, title. Defaults to primary_color |
-| background_top | (unused) | top of the background gradient |
-| hook_color | (unused) | sung colour of hook lines (lyrics.is_hook_line). Default: cyan, as on covers |
+| accent_color | (unused) | ring, waveform, bass band, dots, grid, beat squares, timeline, title. Defaults to
+  primary_color |
+| background_top | (unused) | top of the background gradient, and the colour the start and end fade to |
+| hook_color | (unused) | sung colour of hook lines (lyrics.is_hook_line), and the waveform while one is sung.
+  Default: cyan, as on covers |
 
 burn_subs.load_style_file passes unknown keys through silently, so beatmv-only keys do not change burn_subs.
 """

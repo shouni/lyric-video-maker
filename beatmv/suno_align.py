@@ -1,10 +1,11 @@
 """Build lyrics.ass by combining Suno's lyric alignment with Whisper's (lyrics_aligner = "hybrid").
 
-For songs sung from kana, neither one alone makes usable subtitles:
+This is the older way for songs sung from kana: suno_kana.py now maps Suno's kana onto the display lyrics
+without Whisper. Used as it comes, neither alignment makes usable subtitles for those songs:
 - Suno's alignment (audio-lyrics-alignment) places lines accurately, but its text comes back in kana,
   which cannot be shown as kanji subtitles.
 - Whisper (align_subtitles.py) can time kanji character by character, but it pulls a line's start back
-  to the end of the previous line and can leave seconds of empty time after a held word. On Overclock
+  to the end of the previous line and can leave seconds of empty time after a held word. On one song
   (2026-11-02) the last three lines were 2–4 s off.
 
 So each line's start and end come from Suno, and the timing of characters inside the line from Whisper.
@@ -28,12 +29,13 @@ import burn_subs
 FIRST_SEG_CAP = 0.4
 # A held last character can run into the interlude, so it is trimmed to this.
 LAST_SEG_CAP = 1.0
-# Lines that still have a character longer than this after merging are listed for checking (two on Overclock).
+# Lines that still have a character longer than this after merging are listed for checking (two on that song).
 HELD_WARN = 1.5
-# Lines whose start differs by more than this are listed for checking by ear (2–4 s at the end of Overclock).
+# Lines whose start differs by more than this are listed for checking by ear (2–4 s at the end of that song).
 START_WARN = 2.0
 
-# In English subtitles (words_to_ass), a gap between words longer than this becomes an empty \\k.
+# A gap between words longer than this becomes an empty \k (words_to_ass; suno_kana.lines_to_ass does the same
+# between characters).
 GAP_TOKEN = 0.15
 
 _TAG = re.compile(r"\[[^\]]*\]")
@@ -164,7 +166,7 @@ def words_to_ass(words):
         segs[0] = (segs[0][0].lstrip(), segs[0][1], segs[0][2])
         segs[-1] = (segs[-1][0].rstrip(), segs[-1][1], segs[-1][2])
         # When the gap between words (end of one to start of the next) exceeds GAP_TOKEN, insert an empty
-        # \\k. Otherwise the next word fills during the gap and is coloured before it is sung
+        # \k. Otherwise the next word fills during the gap and is coloured before it is sung
         parts, t = [], segs[0][1]
         for tok, a, e in segs:
             if a - t > GAP_TOKEN:

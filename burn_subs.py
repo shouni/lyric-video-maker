@@ -68,7 +68,8 @@ FONT_CANDIDATES = [
     "/System/Library/Fonts/AppleSDGothicNeo.ttc",
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     "/Library/Fonts/Arial Unicode.ttf",
-    # Linux (Docker: fonts-noto-cjk), so the sister web service can import this module instead of a copy
+    # Linux (fonts-noto-cjk). Added so the sister web service (lyric-video, shut down on 2026-08-13 and archived)
+    # could import this module from its Docker image instead of a copy; any Linux host still uses them.
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf",
@@ -217,14 +218,6 @@ def best_split_index(draw, units, font, spacing):
     return best_idx
 
 
-def best_split(draw, text, font, spacing):
-    """Split one line of text into two (by character). Returns (text, "") if it cannot be split."""
-    idx = best_split_index(draw, list(text), font, spacing)
-    if idx is None:
-        return text, ""
-    return text[:idx].strip(), text[idx:].strip()
-
-
 def shrink_to_fit(draw, lines, font, spacing, max_w):
     """Shrink the font until the given lines fit max_w.
 
@@ -275,20 +268,12 @@ def fit_line_layout(draw, text, cfg):
     return font, [text] if idx is None else split_texts(idx)
 
 
-def best_split_segs(draw, segs, font, spacing):
-    """Split karaoke \\k segments into two lines (by segment). Returns (segs, []) if it cannot be split.
-
-    In existing ASS files, punctuation and trailing spaces are folded into the segment before, so segment
-    boundaries match best_split's character / space boundaries.
-    """
-    idx = best_split_index(draw, [t for _, _, t in segs], font, spacing)
-    if idx is None:
-        return segs, []
-    return segs[:idx], segs[idx:]
-
-
 def fit_karaoke_layout(draw, segs, cfg):
-    """Choose a font and a line split (1–2 lines) so the karaoke \\k segments fit the image width."""
+    """Choose a font and a line split (1–2 lines) so the karaoke \\k segments fit the image width.
+
+    In existing ASS files, punctuation and trailing spaces are folded into the segment before, so splitting
+    between segments lands on the same character / space boundaries as line mode's split by character.
+    """
     texts = [t for _, _, t in segs]
 
     def split_texts(idx):
@@ -371,10 +356,9 @@ def draw_text_block(img, lines, font, cfg):
 
 
 def render_line_frame(img, text, cfg):
-    """Draw one line of text following the style (placement, letter spacing, background box).
+    """Draw one line of text in a single colour through draw_text_block (see it for the style and transparency).
 
-    Text that does not fit is shrunk or wrapped into two lines. Given a transparent layer (RGBA), it keeps the
-    transparency (for video overlays).
+    Text that does not fit is shrunk or wrapped into two lines.
     """
     font, lines = fit_line_layout(ImageDraw.Draw(img), text, cfg)
     return draw_text_block(img, [[(ln, cfg.primary)] for ln in lines], font, cfg)

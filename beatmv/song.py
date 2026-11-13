@@ -1,11 +1,12 @@
 """Read songs/<slug>/song.toml.
 
-Only the title, audio, lyrics, beats, section times and drum rule differ per song; the drawing code is
-shared. Write times taken from the finished audio, not from the recipe (Suno does not keep the recipe's
-lengths).
+Only the fields of Song differ per song (title, audio, lyrics and their aligner, beats, section times, drum
+rule, and the optional ones: style, credit, fades, thumbnail window, bass band, waveform source, translation,
+snare rolls); the drawing code is shared. Write times taken from the finished audio, not from the recipe
+(Suno does not keep the recipe's lengths).
 
-Paths: files inside song_dir (lyrics / beats) are relative to song_dir; the audio and the work directory
-are relative to the repository (~ and absolute paths also work). Audio and outputs stay out of the repo.
+Paths: files inside song_dir (lyrics / beats / translation) are relative to song_dir; the audio and the work
+directory are relative to the repository (~ and absolute paths also work). Audio and outputs stay out of the repo.
 """
 import os
 import tomllib
@@ -112,7 +113,7 @@ def load_translation(song, n_lines):
     """Read one translation row per subtitle line. Stop if the counts differ (a one-row offset would give
     every line another line's translation).
 
-    An empty row means "no translation for this line" (e.g. a repeated fragment such as `Only the pulse`).
+    An empty row means "no translation for this line" (e.g. a repeated fragment of the line before).
     """
     if not song.translation:
         return None

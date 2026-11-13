@@ -46,7 +46,7 @@ def load_lines_from(subs, aligner):
     return out
 
 
-# Hook lines: English lines of up to four words with no Japanese (`Override! Override!`, `Overclock the heart`).
+# Hook lines: English lines of up to four words with no Japanese (`Override! Override!`, `Shatter the silence`).
 # The Suno prompts open each chorus with a shout of this shape, so it can be picked out of the lyrics.
 HOOK_MAX_WORDS = 4
 _JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff々〆ヶ]")
@@ -59,7 +59,7 @@ def has_japanese(text):
 
 
 def is_hook_line(text):
-    """A line with no Japanese, some Latin letters and at most four words is a hook line."""
+    """A line with no Japanese, some Latin letters and at most HOOK_MAX_WORDS words is a hook line."""
     return (not _JAPANESE.search(text) and bool(_LATIN.search(text))
             and len(text.split()) <= HOOK_MAX_WORDS)
 
@@ -86,7 +86,8 @@ def progress(segs, t):
 
 
 def to_srt(lines, out_path):
-    """SRT for YouTube. Each line runs from its first sung character to the next line's first."""
+    """SRT for YouTube. Each line runs from its first sung character to its end, or to the next line's first
+    sung character when that comes sooner (so two lines never overlap)."""
     subs = pysubs2.SSAFile()
     for i, (text, _, end, segs) in enumerate(lines):
         start = segs[0][1]

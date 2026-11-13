@@ -1,5 +1,6 @@
 # Packaging exists so other projects can import the tools instead of copying them: the sister web service
-# (lyric-video) kept its own copies of align_subtitles.py / burn_subs.py, and fixes had to be ported by hand.
+# (lyric-video, shut down on 2026-08-13 and archived) kept its own copies of align_subtitles.py / burn_subs.py,
+# and fixes had to be ported by hand.
 #   pip install "git+https://github.com/shouni/lyric-video-maker"          # burn_subs, burn_subs_video, make_cover
 #   pip install "lyric-video-maker[align] @ git+https://github.com/shouni/lyric-video-maker"   # + Whisper alignment
 # Day-to-day use stays `pip install -r requirements.txt` (pinned versions) in a checkout.

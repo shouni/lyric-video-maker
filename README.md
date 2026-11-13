@@ -13,8 +13,8 @@ English | [日本語](README.ja.md)
 
 **Lyric Video Maker** is a set of Python tools that turn a song into a music video with karaoke lyrics. There are two ways to use it.
 
-- **beatmv (a music video drawn from the audio)**: no image assets. It analyses the song and draws kicks, snares, bass and lyrics frame by frame (4K by default). → [beatmv](#-beatmv-a-music-video-drawn-from-the-audio)
-- **Karaoke video from a keyframe ZIP**: builds an **MP4 with karaoke subtitles** from an audio file (mp3, wav, …) and a ZIP of keyframes. It can also burn subtitles onto a finished music video.
+- **beatmv (a music video drawn from the audio)**: no image assets. It analyses the song and draws kicks, snares and lyrics frame by frame, plus an optional bass band (4K by default). → [beatmv](#-beatmv-a-music-video-drawn-from-the-audio)
+- **Karaoke video from a keyframe ZIP**: builds an **MP4 with karaoke subtitles** from an audio file (mp3, wav, …) and a ZIP of keyframes. The ZIP comes from [ap-mv](https://github.com/shouni/ap-mv), or you can build one by hand (see [ZIP layout](#-zip-layout)). It can also burn subtitles onto a finished music video.
 
 The keyframe ZIP workflow has three steps (step ② has two variants, for still images or for video).
 
@@ -26,7 +26,7 @@ The keyframe ZIP workflow has three steps (step ② has two variants, for still 
    audio.mp3 + keyframes.zip (+ ASS)  →  output.mp4 (slideshow with karaoke subtitles)
 
 ②' burn_subs_video.py
-   video.mp4 + ASS  →  MP4 with styled subtitles burnt in (one plain line, or karaoke), picture unchanged
+   video.mp4 + ASS  →  MP4 with styled subtitles burnt in (one plain line, or karaoke)
 
 ③ make_cover.py (optional)
    output.mp4  →  two cover images (16:9 YouTube thumbnail / 9:16 Shorts)
@@ -62,7 +62,7 @@ If your lyrics are plain text (.txt), pass them straight to step ①.
 - `"mode": "line"` shows **one line without karaoke highlighting**. It is faster than karaoke because the state changes only per line.
 - Placement (`position`: top/center/bottom), letter spacing (`letter_spacing`) and a background box (`box`) work **in both modes**: karaoke and line mode share one placement routine, so a style looks the same with or without highlighting.
 - Lines that do not fit are **adjusted automatically**: first it shrinks the font on one line, and when the shrink would go below 70 % it **wraps into two lines** (at a space for English, at the best-balanced character boundary for Japanese). Karaoke mode follows the same rule but splits only between `\k` segments, never inside one.
-- Pixel values (`font_size` / `margin_v` / `outline` / `letter_spacing` / `box.pad`) are given **for PlayResY 1080** and scaled to the real resolution. Colours are `#RRGGBB`. Invalid values warn and fall back to the ASS values.
+- Pixel values (`font_size` / `margin_v` / `outline` / `letter_spacing` / `box.pad`) are given **in the ASS file's `PlayResY` units** (1080 when the file does not say) and scaled to the real resolution. Colours are `#RRGGBB`. An invalid `mode`, `position`, colour, `font` or `font_index` warns and falls back to the default; numbers are not checked, so a non-numeric size stops with an error.
 
 ```json
 {
@@ -80,17 +80,17 @@ If your lyrics are plain text (.txt), pass them straight to step ①.
 }
 ```
 
-- `box` / `font` / `font_index` are optional. Without `mode` it renders karaoke as before and only applies the colour and size overrides.
+- `box` / `font` / `font_index` are optional. Without `mode`, `burn_subs.py` renders karaoke and `burn_subs_video.py` renders plain lines; the colour and size overrides apply either way.
 - `font_index` picks a weight inside a `.ttc` (one file holding several weights), e.g. Hiragino Mincho ProN: 0 = W3, 2 = W6. It only applies together with `font`.
-- **Fonts**: macOS's **Hiragino Kaku Gothic W7** is preferred. Without it, it falls back to **Source Han Sans** (Source Han Sans VF, SIL Open Font License, fine for commercial use on YouTube). Install it with `brew install --cask font-source-han-sans-vf`. On Linux it looks for Noto Sans CJK (`fonts-noto-cjk`). To use another font everywhere, set `BURN_SUBS_FONT=/path/to/font.ttf`; it is tried before the built-in list (covers and beatmv follow it too when Hiragino is missing).
+- **Fonts**: macOS's **Hiragino Kaku Gothic W7** is preferred. Without it, it falls back to **Source Han Sans** (Source Han Sans VF, SIL Open Font License, fine for commercial use on YouTube). Install it with `brew install --cask font-source-han-sans-vf`. On Linux it looks for Noto Sans CJK (`fonts-noto-cjk`). If none of these is found it tries other CJK system fonts, and finally Pillow's built-in font with a warning. To use another font everywhere, set `BURN_SUBS_FONT=/path/to/font.ttf`; it is tried before the built-in list. Covers use the same list. beatmv tries Hiragino first and falls back to this list.
 
 ### 🖼️ Cover images (make_cover.py)
 
 - Extracts a frame from the finished MP4 with ffmpeg (the first frame by default, or any time with e.g. `--at 8`), draws the title and artist name on it, and writes two images:
   - `cover_youtube.png` (1280x720): the recommended YouTube thumbnail size
-  - `cover_short.png` (1080x1920): a 16:9 frame centred over a blurred, darkened background, for Shorts
+  - `cover_short.png` (1080x1920): the frame placed slightly above centre (at 42 % of the height) over a blurred, darkened background, for Shorts
 - Without a title it uses **the MP4's parent folder name**. The default artist name is `Digital Armor Style`.
-- White title with a dark stroke and shadow, artist name in gold. Long titles shrink until they fit.
+- White title with a dark stroke and shadow, artist name in gold (another colour with `--artist-color`). Long titles shrink until they fit.
 - Fonts are found with `burn_subs.py`'s `load_font`, so covers use the same font as the subtitles.
 
 ---
@@ -103,7 +103,7 @@ If your lyrics are plain text (.txt), pass them straight to step ①.
 pip install -r requirements.txt
 ```
 
-> ffmpeg is also required (for encoding).
+> ffmpeg and ffprobe are also required (for encoding; both come with the ffmpeg package).
 > ```sh
 > brew install ffmpeg   # macOS
 > ```
@@ -121,6 +121,8 @@ pip install "lyric-video-maker[align] @ git+https://github.com/shouni/lyric-vide
 ---
 
 ### Run (copy and paste)
+
+The repository ships no sample media. Put your own files in `input/` (ignored by git) and replace the file names below.
 
 **Accurate (with Whisper alignment):**
 
@@ -188,7 +190,7 @@ python3 make_cover.py output/output.mp4 --title "Song Title"
 
 | Argument | Required | Description |
 | --- | --- | --- |
-| `video.mp4` | ✅ | Input video (the picture is kept as it is) |
+| `video.mp4` | ✅ | Input video (re-encoded with x264 at CRF 18 with the subtitles on top; the audio is copied) |
 | `subtitles.ass` | ✅ | Timed ASS (line mode uses only each line's start and end; karaoke mode also uses the `\k` tags) |
 | `output.mp4` | ➖ | Output file (default: `output_video.mp4`) |
 | `--style-file <style.json>` | ➖ | Style JSON. Without `mode` it draws plain lines (unlike `burn_subs.py`, whose default is karaoke); `"mode": "karaoke"` highlights per `\k` |
@@ -203,6 +205,7 @@ Every subtitle state is drawn to a transparent PNG (one per line, or one per hig
 | `video.mp4` | ✅ | Input MP4 |
 | `--title` | ➖ | Title (default: the MP4's parent folder name) |
 | `--artist` | ➖ | Artist name (default: `Digital Armor Style`) |
+| `--artist-color <RRGGBB>` | ➖ | Colour of the artist name (default: `FFD700`, gold) |
 | `--outdir` | ➖ | Output folder (default: the MP4's folder) |
 | `--at <seconds>` | ➖ | Time of the frame used for the cover (default: `0`, the first frame). Use it when the video starts from black |
 
@@ -242,35 +245,37 @@ Everything that differs per song goes in `songs/<slug>/song.toml`; the code is s
 ```
 songs/<slug>/
   song.toml     title, audio, work directory, section times, drum rule
-  beats.json    downbeat times (from Suno's audio-analysis)
+  beats.json    downbeat times, {"downbeats": [seconds, ...]} (from Suno's audio-analysis)
   lyrics.ass    lyrics with \k (from Suno's lyric alignment, or align_subtitles.py)
 ```
 
 ```sh
-.venv/bin/python -m beatmv analyze  songs/<slug>   # Demucs drum separation → kick/snare hits, loudness for the waveform
-.venv/bin/python -m beatmv align    songs/<slug>   # write lyrics.ass (suno: Suno's alignment only / suno_kana: Suno's kana on the kanji lyrics / hybrid: combined with Whisper)
-.venv/bin/python -m beatmv render   songs/<slug>   # the video (4K by default; --scale 1 for 1080p, --preview 45,100 for stills; --preview cannot be combined with --from / --to)
-.venv/bin/python -m beatmv render   songs/<slug> --portrait --from 132 --to 198.2   # a Short: 1080x1920, only that span
-.venv/bin/python -m beatmv srt      songs/<slug>   # YouTube subtitles (SRT)
-.venv/bin/python -m beatmv rolls    songs/<slug>   # kick runs that may be snare rolls (put the ones you hear as rolls in snare_rolls)
-.venv/bin/python -m beatmv thumb-bg songs/<slug>   # thumbnail background (no text; the title is added by my own composing pipeline)
-.venv/bin/python -m beatmv thumb-bg songs/<slug> --portrait   # the Short's cover background (1080x1920, same moment as the thumbnail)
+python3 -m beatmv analyze  songs/<slug>   # Demucs drum separation → kick/snare hits, loudness for the waveform
+python3 -m beatmv align    songs/<slug>   # write lyrics.ass from Suno's alignment (which way depends on lyrics_aligner, see below)
+python3 -m beatmv render   songs/<slug>   # the video (4K by default; --scale 1 for 1080p, --preview 45,100 for stills; --preview cannot be combined with --from / --to)
+python3 -m beatmv render   songs/<slug> --portrait --from 132 --to 198.2   # a Short: 1080x1920, only that span
+python3 -m beatmv srt      songs/<slug>   # YouTube subtitles (SRT)
+python3 -m beatmv rolls    songs/<slug>   # kick runs that may be snare rolls (put the ones you hear as rolls in snare_rolls)
+python3 -m beatmv thumb-bg songs/<slug>   # thumbnail background (1280x720, no text; add the title yourself)
+python3 -m beatmv thumb-bg songs/<slug> --portrait   # the Short's cover background (1080x1920, same moment as the thumbnail)
 ```
+
+Everything is written to the song's `work_dir`: the video as `mv_<slug>_2160p.mp4` (`_portrait` and the span are added to the name when used), stills as `preview_<seconds>.jpg`, subtitles as `<slug>.srt`, the backgrounds as `thumb_bg.png` / `thumb_bg_portrait.png`, and the analysis as `drums.json` and `*.npy`.
 
 - **`--portrait` draws the same song in 9:16 for Shorts** (1080x1920 by default, `--scale 2` for 2160x3840). The header sits below the Shorts top bar and the timeline above the bottom UI. A lyric or translation that is still too wide at the smallest text size wraps into two rows (between words for English), and the rows fill one after the other. If the lyric and its translation together would reach the timeline, the block moves up by what would overlap.
 - **`--from` / `--to` render only part of the song**, in either layout: a few seconds to check a change without rendering the whole song in 4K, or the span of a Short. A clip cut out of the middle fades in over 0.08 s and out over 1.4 s (picture and audio); an end that coincides with the song's keeps the song's fade. The file is named after the span (`mv_<slug>_portrait_132-198.2.mp4`).
 - **Take times from the audio, not from the recipe.** Suno does not keep the section lengths it was asked for and sometimes adds interludes nobody asked for. Write the real times, from Suno's alignment and analysis, into `sections` / `choruses` / `instrumental`.
 - **Pick the drum rule per song** (`drum_rule`). `rock` calls a hit a kick when the low end dominates. `edm` calls it a kick when the low end rises, because a four-on-the-floor kick's attack also reaches the mids, and shows the second row as general percussion (`PERC`). `trance` uses the same rule as `edm` but does not count kicks as percussion (with `edm`, the kick's attack also counts as percussion, so the vertical lines and the ring flash together on the beat). Keep `edm` for songs with claps on the kick.
-- **`dnb` takes kicks and ghost notes out of the snare row.** Kicks use the `rock` rule; the snare row drops hits that coincide with a kick and hits with a weak attack (ghost notes, hats). Those are shown on the snare row as small light-blue stars and do not light the centre line (radius 11: smaller than a strong snare's square, still visible at phone size). Across six DnB songs, snare flashes per bar fell from 2.5–3.4 to 1.3–1.8, and more of them land on beats 2 and 4 (half-time songs hit beat 3, so they do not change).
-- **Bass is shown as a band of loudness** (only with `bass_band = true`). Demucs's 4-stem split isolates the bass, and a horizontal band under the waveform grows and shrinks with its loudness. It is not drawn as hits because an off-beat bass line has few clear attacks and only part of what plays was picked up. A third row for claps and hi-hats was tried too, but claps on 2 and 4 could not be told apart from the kick and only some off-beat hats were found, so it was left out.
-- **Colours are shared with burn_subs through `styles/`** (`style`, default `karaoke_blue`). beatmv only reads colours: `primary_color` (sung), `secondary_color` (not yet sung), `outline_color` (outline and the lower background), plus its own `accent_color` (ring, waveform, timeline, title; defaults to `primary_color`) and `background_top` (the upper background). Sizes such as `font_size` are ignored, because beatmv's layout decides text size.
-- **For songs sung from kana, set `lyrics_aligner = "suno_kana"` and build lyrics.ass with `beatmv align`.** Put the lyrics as shown (kanji) in `work/<slug>/lyrics.txt`, one line per sung line, and the full Suno alignment response in `work/<slug>/suno_alignment.json`. Suno returns kana with a time for every one or two characters; each kanji is wiped over the kana it was sung as, without Whisper or a dictionary (the display's kana anchor the match, and the particles を・へ・は match the sung オ・エ・ワ). Lines whose kana differ from what was sung stop the run with a list, and pauses of over 1 s inside a line are listed for checking by ear. On Wet Rails it matched a hand-timed table within 0.1 s on 283 of 289 characters.
-- **`hybrid` is the older way for the same songs** Each line's start and end come from Suno's alignment (`work/<slug>/suno_alignment.json`); the timing of characters inside the line comes from Whisper (`work/<slug>/lyrics.whisper.ass`, the output of align_subtitles.py; when that file is missing, `beatmv align` runs the alignment itself from `work/<slug>/lyrics.txt`, or `--lyrics`, against the separated vocal if `analyze` has made one). Suno places lines accurately but returns the text in kana; Whisper can time kanji but drifts at the ends of lines. If the line counts differ it stops rather than guess, and lines with a large offset are listed for checking, so only those need checking by ear.
-- **For songs sung in English, set `lyrics_aligner = "suno"` and build lyrics.ass with `beatmv align`.** Suno's aligned words are the lyrics as displayed, so each word is filled in turn. Gaps between words become empty segments, so the next word starts filling when it is sung. Suno attaches a word's trailing punctuation to the next word (`ready` / `! Go`), so it is moved back onto the word before; otherwise the `!` stays unfilled until the next word. The alignment can also go wrong (squeezing the last two lines into one second, holding one word for 12 seconds), so compare it with the separated vocal's loudness (`vocal_rms.npy`) and, if they disagree, fix `suno_alignment.json` before running `beatmv align`.
+- **`dnb` takes kicks and ghost notes out of the snare row.** Kicks use the `rock` rule; the snare row drops hits that coincide with a kick and hits with a weak attack (ghost notes, hats). Those are shown on the snare row as small light-blue stars and do not light the centre line (smaller than a strong snare's square, still visible at phone size). Across six DnB songs, snare flashes per bar fell from 2.5–3.4 to 1.3–1.8, and more of them land on beats 2 and 4 (half-time songs hit beat 3, so they do not change).
+- **Bass is shown as a band of loudness** (only with `bass_band = true`). Demucs's 4-stem split isolates the bass, and a horizontal band under the waveform grows and shrinks with its loudness. It is not drawn as hits because an off-beat bass line has few clear attacks and only part of what plays was picked up.
+- **Colours are shared with burn_subs through `styles/`** (`style`, default `karaoke_blue`). beatmv only reads colours: `primary_color` (sung), `secondary_color` (not yet sung), `outline_color` (outline and the lower background), plus its own `accent_color` (ring, waveform, timeline, title; defaults to `primary_color`), `background_top` (the upper background) and `hook_color` (hook lines). Sizes such as `font_size` are ignored, because beatmv's layout decides text size.
+- **For songs sung from kana, set `lyrics_aligner = "suno_kana"` and build lyrics.ass with `beatmv align`.** Put the lyrics as shown (kanji) in `work/<slug>/lyrics.txt`, one line per sung line, and the full Suno alignment response in `work/<slug>/suno_alignment.json`. Suno returns kana with a time for every one or two characters; each kanji is wiped over the kana it was sung as, without Whisper or a dictionary (the display's kana anchor the match, and the particles を・へ・は match the sung オ・エ・ワ). Lines whose kana differ from what was sung stop the run with a list, and pauses of over 1 s inside a line are listed for checking by ear. On one song it matched a hand-timed table within 0.1 s on 283 of 289 characters.
+- **`hybrid` is the older way for the same songs.** Each line's start and end come from Suno's alignment (`work/<slug>/suno_alignment.json`); the timing of characters inside the line comes from Whisper (`work/<slug>/lyrics.whisper.ass`, the output of align_subtitles.py; when that file is missing, `beatmv align` runs the alignment itself from `work/<slug>/lyrics.txt`, or `--lyrics`, against the separated vocal if `analyze` has made one, which it does only for `bass_band = true` or `wave = "vocals"`). Suno places lines accurately but returns the text in kana; Whisper can time kanji but drifts at the ends of lines. If the line counts differ it stops rather than guess, and lines with a large offset are listed for checking, so only those need checking by ear.
+- **For songs sung in English, set `lyrics_aligner = "suno"` and build lyrics.ass with `beatmv align`.** Suno's aligned words are the lyrics as displayed, so each word is filled in turn. Gaps between words become empty segments, so the next word starts filling when it is sung. Suno attaches a word's trailing punctuation to the next word (`ready` / `! Go`), so it is moved back onto the word before; otherwise the `!` stays unfilled until the next word. The alignment can also go wrong (squeezing the last two lines into one second, holding one word for 12 seconds), so compare it with the separated vocal's loudness (`vocal_rms.npy`, written by `analyze` when `wave = "vocals"`) and, if they disagree, fix `suno_alignment.json` before running `beatmv align`.
 - **Show a translation with `translation`** (a text file next to song.toml: one line per subtitle line, an empty line means no translation for that line). The translation is not filled in; it appears under the lyric with its line and hides the next-line preview meanwhile. If the line counts differ it stops. `beatmv srt` also writes the translation as SRT (`<slug>.ja.srt`).
-- **Latin-only lines use a Latin typeface.** Lines containing Japanese use Hiragino; Latin-only lines (English lyrics, English translations, titles, section names) use Helvetica Neue. A Latin typeface looks smaller than Hiragino's Latin letters at the same point size, so it is scaled by 1.18 to keep the line width. `BEATMV_EN_FONT=sf` (SF Pro, ×1.25) or `hiragino` (the previous look) switches it.
+- **Latin-only lines use a Latin typeface.** Lines containing Japanese use Hiragino; Latin-only lines (English lyrics, English translations, titles, section names) use Helvetica Neue. The next-line preview stays in Hiragino, and without Helvetica Neue these lines use the Japanese font. A Latin typeface looks smaller than Hiragino's Latin letters at the same point size, so it is scaled by 1.18 to keep the line width. `BEATMV_EN_FONT=sf` (SF Pro, ×1.25) or `hiragino` (the previous look) switches it.
 - **Choose the waveform source with `wave`**: `mix` (everything except drums, default) or `vocals` (voice only; needs the Demucs 4-stem split).
-- **Hook lines stand out by size and colour.** English lines of up to four words without Japanese (e.g. `Override! Override!`) are drawn larger, filled with `hook_color`, and the waveform leans to `hook_color` around them. No flashing or beat zoom.
+- **Hook lines stand out by size and colour.** English lines of up to four words without Japanese (e.g. `Override! Override!`) are drawn larger, their sung part is filled with `hook_color`, and the waveform leans to `hook_color` around them. No flashing or beat zoom.
 - **Where the lyrics come from changes how filling starts** (`lyrics_aligner`). With `whisper` (align_subtitles.py), a line's start is pulled back to the end of the previous line, so when the first character is long, filling starts just before it is sung.
 
 ---
@@ -285,6 +290,7 @@ songs/<slug>/
 | [ffmpeg](https://ffmpeg.org/) | Video encoding and audio muxing (system install) |
 | [Demucs](https://github.com/adefossez/demucs) | Drum separation for beatmv |
 | [librosa](https://librosa.org/) | Hit detection and loudness for beatmv |
+| [NumPy](https://numpy.org/) | Frame and loudness arrays for beatmv |
 
 ---
 
@@ -295,7 +301,7 @@ pip install -r requirements-dev.txt
 python3 -m pytest tests -q
 ```
 
-The tests cover the pure logic that does not call ffmpeg or Whisper: `\k` parsing, line wrapping, style JSON validation, matching lyrics to the audio's characters, resolving overlapping display times, the transparent subtitle track for videos, cover layouts, and beatmv's song settings, drum rules, lyric timing, colours and layouts (landscape, portrait, clips). beatmv is tested with the made-up song in `tests/fixtures/song/`. Check the video itself by running on the samples in `input/`.
+The tests cover the pure logic that does not call ffmpeg or Whisper: `\k` parsing, line wrapping, style JSON validation, matching lyrics to the audio's characters, resolving overlapping display times, the transparent subtitle track for videos, cover layouts, and beatmv's song settings, drum rules, lyric timing, colours and layouts (landscape, portrait, clips). beatmv is tested with the made-up song in `tests/fixtures/song/`. Its tests draw frames and need a Japanese font, which is why CI runs on macOS; the drawing tests of burn_subs and make_cover are skipped when no scalable font is found. Check the video itself by running the tools on your own files.
 
 ---
 
