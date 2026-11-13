@@ -18,7 +18,7 @@ requires-python = ">=3.12"
 dependencies = ["pysubs2>=1.9", "pillow>=13"]
 
 [project.optional-dependencies]
-align = ["stable-ts>=2.19", "silero-vad>=6.2"]
+align = ["stable-ts>=2.19"]
 beatmv = ["numpy>=2.5", "demucs>=4.1", "librosa>=0.11"]
 
 [project.urls]
