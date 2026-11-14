@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lyric-video-maker"
-version = "1.0.10"  # keep in step with the git tag (v1.0.10)
+version = "1.0.11"  # keep in step with the git tag (v1.0.11)
 description = "Turn a song into a music video with karaoke lyrics"
 readme = "README.md"
 license = "MIT"
