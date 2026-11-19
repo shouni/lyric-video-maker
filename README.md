@@ -11,10 +11,23 @@ English | [日本語](README.ja.md)
 
 ## 🚀 About - music videos and karaoke lyrics drawn from the audio by code
 
+[![A frame from a beatmv music video: kick ring, waveform, Japanese karaoke lyrics with an English line, and the kick/snare timeline](docs/images/beatmv_example.jpg)](https://www.youtube.com/watch?v=_9HxYfFgJHE)
+
+*A frame from a 24-minute mix rendered with beatmv: the ring widens on kicks, the lyric fills in as it is sung, the English line sits under it, and the kick/snare timeline runs along the bottom. Click to watch on YouTube.*
+
 **Lyric Video Maker** is a set of Python tools that turn a song into a music video with karaoke lyrics. There are two ways to use it.
 
 - **beatmv (a music video drawn from the audio)**: no image assets. It analyses the song and draws kicks, snares and lyrics frame by frame, plus an optional bass band (4K by default). → [beatmv](#-beatmv-a-music-video-drawn-from-the-audio)
 - **Karaoke music video from a keyframe ZIP**: builds an **MP4 with karaoke subtitles** from an audio file (mp3, wav, …) and a ZIP of keyframes. The ZIP comes from [ap-mv](https://github.com/shouni/ap-mv), or you can build one by hand (see [ZIP layout](#-zip-layout)). It can also burn subtitles onto a finished music video.
+
+### 🎬 Made with this tool
+
+Music videos on YouTube rendered with beatmv (music: Digital Armor Style, made with Suno):
+
+- [Cyber Drum and Bass Non-Stop Mix (24 min, Japanese vocals with English lines)](https://www.youtube.com/watch?v=_9HxYfFgJHE)
+- [Overclock (Short, Japanese karaoke with English lines)](https://www.youtube.com/shorts/qgcSbq1E3lQ)
+- [境界線の向こうへ (music video)](https://www.youtube.com/watch?v=sW2hFK_izMM)
+- [駆け抜けろ Midnight (music video)](https://www.youtube.com/watch?v=qB68NxmmSZ0)
 
 ---
 

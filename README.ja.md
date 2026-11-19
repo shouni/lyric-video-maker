@@ -11,10 +11,23 @@
 
 ## 🚀 概要 (About) - 曲の音から、コードで MV と歌詞字幕を描く
 
+[![beatmv で描いた MV の 1 コマ：キックのリング、波形、日本語のカラオケ字幕と英訳、キックとスネアのタイムライン](docs/images/beatmv_example.jpg)](https://www.youtube.com/watch?v=_9HxYfFgJHE)
+
+*beatmv で書き出した 24 分のミックスの 1 コマ。キックでリングが広がり、歌った部分から歌詞の色が変わり、その下に英訳、画面の下にキックとスネアのタイムラインが流れます。画像をクリックすると YouTube で見られます。*
+
 **Lyric Video Maker** は、曲から MV と歌詞字幕を作る Python のツール群です。作り方は 2 通りあります。
 
 - **beatmv（音から描く MV）**：画像素材を使わず、曲を解析してキック・スネア・歌詞を 1 コマずつ描きます。ベースの帯も任意で足せます（既定は 4K）。→ [beatmv](#-beatmv画像素材なしで音から描く-mv)
 - **キーフレーム ZIP から作るカラオケ MV**：音声ファイル（mp3 / wav など）とキーフレーム ZIP から、**カラオケ字幕付き MP4 動画**を作ります。ZIP は [ap-mv](https://github.com/shouni/ap-mv) が出力するものを使うか、手で作ります（[ZIP ファイルの構成](#-zip-ファイルの構成)を参照）。完成済みの MV 動画へ字幕を乗せることもできます。
+
+### 🎬 このツールで作った動画
+
+beatmv で書き出し、YouTube で公開している動画です（音楽: Digital Armor Style、Suno で制作）。
+
+- [Cyber Drum and Bass Non-Stop Mix（24 分、日本語の歌と英訳）](https://www.youtube.com/watch?v=_9HxYfFgJHE)
+- [Overclock（ショート、日本語のカラオケ字幕と英訳）](https://www.youtube.com/shorts/qgcSbq1E3lQ)
+- [境界線の向こうへ（MV）](https://www.youtube.com/watch?v=sW2hFK_izMM)
+- [駆け抜けろ Midnight（MV）](https://www.youtube.com/watch?v=qB68NxmmSZ0)
 
 ---
 
