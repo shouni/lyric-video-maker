@@ -25,7 +25,7 @@ English | [日本語](README.ja.md)
 Music videos on YouTube rendered with beatmv (music: Digital Armor Style, made with Suno):
 
 - [Cyber Drum and Bass Non-Stop Mix (24 min, Japanese vocals with English lines)](https://www.youtube.com/watch?v=_9HxYfFgJHE)
-- [Overclock (Short, Japanese karaoke with English lines)](https://www.youtube.com/shorts/qgcSbq1E3lQ)
+- [Overclock (Short, Japanese karaoke with English lines; built on beatmv's lyric timing and fonts)](https://www.youtube.com/shorts/qgcSbq1E3lQ)
 - [境界線の向こうへ (music video)](https://www.youtube.com/watch?v=sW2hFK_izMM)
 - [駆け抜けろ Midnight (music video)](https://www.youtube.com/watch?v=qB68NxmmSZ0)
 

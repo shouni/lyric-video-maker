@@ -25,7 +25,7 @@
 beatmv で書き出し、YouTube で公開している動画です（音楽: Digital Armor Style、Suno で制作）。
 
 - [Cyber Drum and Bass Non-Stop Mix（24 分、日本語の歌と英訳）](https://www.youtube.com/watch?v=_9HxYfFgJHE)
-- [Overclock（ショート、日本語のカラオケ字幕と英訳）](https://www.youtube.com/shorts/qgcSbq1E3lQ)
+- [Overclock（ショート、日本語のカラオケ字幕と英訳。beatmv の歌詞の時刻合わせと書体を使用）](https://www.youtube.com/shorts/qgcSbq1E3lQ)
 - [境界線の向こうへ（MV）](https://www.youtube.com/watch?v=sW2hFK_izMM)
 - [駆け抜けろ Midnight（MV）](https://www.youtube.com/watch?v=qB68NxmmSZ0)
 
