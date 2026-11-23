@@ -20,6 +20,48 @@
 - **beatmv（音から描く MV）**：画像素材を使わず、曲を解析してキック・スネア・歌詞を 1 コマずつ描きます。ベースの帯も任意で足せます（既定は 4K）。→ [beatmv](#-beatmv画像素材なしで音から描く-mv)
 - **キーフレーム ZIP から作るカラオケ MV**：音声ファイル（mp3 / wav など）とキーフレーム ZIP から、**カラオケ字幕付き MP4 動画**を作ります。ZIP は [ap-mv](https://github.com/shouni/ap-mv) が出力するものを使うか、手で作ります（[ZIP ファイルの構成](#-zip-ファイルの構成)を参照）。完成済みの MV 動画へ字幕を乗せることもできます。
 
+### 🧭 beatmv の処理の流れ
+
+曲のディレクトリ（`songs/<slug>`）に対して、3 つのコマンドを順に実行します。ドラムの打点と音量は音そのものから、歌詞のタイミングは Suno の時刻合わせ（または Whisper）から取り、1 コマずつ Python で描いて、そのまま FFmpeg に流し込みます。
+
+```mermaid
+flowchart LR
+  subgraph IN["入力（songs/slug）"]
+    AUD["音声（WAV）"]
+    BEATS["beats.json<br/>Suno の解析の小節頭"]
+    LYR["lyrics.txt + suno_alignment.json"]
+    TR["translation.txt（任意）"]
+  end
+
+  subgraph AN["beatmv analyze"]
+    D2["Demucs htdemucs<br/>ドラム / それ以外"]
+    ON["librosa の打点検出 +<br/>低域・中域の立ち上がり"]
+    RULE{"drum_rule<br/>rock / edm / trance / dnb"}
+    RMS["ドラム以外の音量<br/>（波形）"]
+    D4["Demucs 4 分割<br/>bass_band か wave = vocals のときだけ"]
+  end
+
+  subgraph AL["beatmv align"]
+    LA{"lyrics_aligner"}
+    SK["suno_kana：Suno のかなを<br/>漢字に割り当てる"]
+    SU["suno：Suno の単語の時刻"]
+    HY["hybrid：Suno の行の時刻 +<br/>Whisper の文字の時刻"]
+  end
+
+  subgraph RE["beatmv render"]
+    PIL["Pillow でコマを描く<br/>マルチプロセス、4K かショート"]
+    FF["FFmpeg libx264<br/>生の RGB をパイプで渡す"]
+    MUX["FFmpeg で音声（AAC）を重ねる"]
+  end
+
+  AUD --> D2 --> ON --> RULE --> DJ["drums.json<br/>キック / スネア / ゴースト"]
+  D2 --> RMS
+  AUD --> D4 --> BV["bass_rms / vocal_rms"]
+  LYR --> LA
+  LA --> SK & SU & HY --> ASS["lyrics.ass"]
+  DJ & RMS & BV & ASS & BEATS & TR --> PIL --> FF --> MUX --> MP4["MP4 の MV"]
+```
+
 ### 🎬 このツールで作った動画
 
 beatmv で書き出し、YouTube で公開している動画です（音楽: Digital Armor Style、Suno で制作）。
