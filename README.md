@@ -20,6 +20,48 @@ English | [日本語](README.ja.md)
 - **beatmv (a music video drawn from the audio)**: no image assets. It analyses the song and draws kicks, snares and lyrics frame by frame, plus an optional bass band (4K by default). → [beatmv](#-beatmv-a-music-video-drawn-from-the-audio)
 - **Karaoke music video from a keyframe ZIP**: builds an **MP4 with karaoke subtitles** from an audio file (mp3, wav, …) and a ZIP of keyframes. The ZIP comes from [ap-mv](https://github.com/shouni/ap-mv), or you can build one by hand (see [ZIP layout](#-zip-layout)). It can also burn subtitles onto a finished music video.
 
+### 🧭 How beatmv works
+
+Three commands, run in order on a song directory (`songs/<slug>`). Drum hits and loudness come from the audio itself; lyric timing comes from Suno's alignment (or Whisper); every frame is drawn in Python and streamed straight into FFmpeg.
+
+```mermaid
+flowchart LR
+  subgraph IN["Inputs (songs/slug)"]
+    AUD["audio (WAV)"]
+    BEATS["beats.json<br/>downbeats from Suno's analysis"]
+    LYR["lyrics.txt + suno_alignment.json"]
+    TR["translation.txt (optional)"]
+  end
+
+  subgraph AN["beatmv analyze"]
+    D2["Demucs htdemucs<br/>drums / no_drums"]
+    ON["librosa onsets +<br/>low / mid band rise"]
+    RULE{"drum_rule<br/>rock / edm / trance / dnb"}
+    RMS["RMS of no_drums<br/>(waveform)"]
+    D4["Demucs 4-stem<br/>only if bass_band or wave = vocals"]
+  end
+
+  subgraph AL["beatmv align"]
+    LA{"lyrics_aligner"}
+    SK["suno_kana: Suno's kana<br/>mapped onto the kanji"]
+    SU["suno: Suno's word timings"]
+    HY["hybrid: Suno's line times +<br/>Whisper's character times"]
+  end
+
+  subgraph RE["beatmv render"]
+    PIL["Pillow frames<br/>multiprocessing, 4K or Shorts"]
+    FF["FFmpeg libx264<br/>raw RGB over a pipe"]
+    MUX["FFmpeg mux + AAC audio"]
+  end
+
+  AUD --> D2 --> ON --> RULE --> DJ["drums.json<br/>kick / snare / ghost"]
+  D2 --> RMS
+  AUD --> D4 --> BV["bass_rms / vocal_rms"]
+  LYR --> LA
+  LA --> SK & SU & HY --> ASS["lyrics.ass"]
+  DJ & RMS & BV & ASS & BEATS & TR --> PIL --> FF --> MUX --> MP4["MP4 music video"]
+```
+
 ### 🎬 Made with this tool
 
 Music videos on YouTube rendered with beatmv (music: Digital Armor Style, made with Suno):
