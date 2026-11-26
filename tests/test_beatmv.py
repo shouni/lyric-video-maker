@@ -793,3 +793,65 @@ def test_suno_kana_refuses_lines_that_do_not_match():
 
 def test_suno_kana_is_an_accepted_aligner(tmp_path):
     assert songmod.load(write_song(tmp_path, lyrics_aligner='"suno_kana"')).lyrics_aligner == "suno_kana"
+
+
+# --------------------------------------------------------------------------- repeats (a block Suno sang again)
+
+def test_map_repeats_explains_a_block_sung_again():
+    from beatmv import repeats
+
+    written = ["a", "b", "c", "d"]
+    sung = ["a", "b", "c", "d", "c", "d"]  # the last two lines sung again, as Suno does to fill the duration
+    sources = repeats.map_repeats(len(written), len(sung), lambda i, j: written[i] == sung[j])
+    assert sources == [0, 1, 2, 3, 2, 3]
+    assert repeats.repeated_runs(sources) == [(5, 6, 3)]
+
+
+def test_map_repeats_keeps_the_written_order_when_the_lyrics_repeat_themselves():
+    from beatmv import repeats
+
+    # the recipe's own chorus is sung twice; a third pass of its first line is the repeat
+    written = ["hook", "x", "verse", "hook", "x", "end"]
+    sung = ["hook", "x", "verse", "hook", "x", "end", "hook"]
+    assert repeats.map_repeats(6, 7, lambda i, j: written[i] == sung[j]) == [0, 1, 2, 3, 4, 5, 3]
+
+
+def test_map_repeats_guesses_nothing():
+    from beatmv import repeats
+
+    same = lambda w, s: (lambda i, j: w[i] == s[j])  # noqa: E731
+    assert repeats.map_repeats(2, 2, same(["a", "b"], ["a", "x"])) is None, "a line neither written nor repeated"
+    assert repeats.map_repeats(3, 3, same(["a", "b", "c"], ["a", "c", "c"])) is None, "a written line not sung"
+
+
+def test_suno_kana_reuses_the_display_line_of_a_repeated_line():
+    from beatmv import repeats, suno_kana
+
+    words = [_w("\nア", 0.0, 0.3), _w("メ", 0.3, 0.6), _w("\nユ", 1.0, 1.3), _w("キ", 1.3, 1.6),
+             _w("\nユ", 3.0, 3.3), _w("キ", 3.3, 3.6)]
+    subs, warnings = suno_kana.lines_to_ass(["雨", "雪"], words)
+    assert [_starts(subs, k)[0] for k in range(3)] == [("雨", 0.0), ("雪", 1.0), ("雪", 3.0)]
+    assert repeats.load(subs) == ([0, 1, 1], 2)
+    assert len(warnings) == 1 and "line 3" in warnings[0]
+
+
+def test_translation_follows_a_repeated_line(tmp_path):
+    s = write_translation_song(tmp_path, ["雨", "雪"])
+    assert songmod.load_translation(s, 3, ([0, 1, 1], 2)) == ["雨", "雪", "雪"]
+    with pytest.raises(ValueError, match="one row per line"):  # without the mapping the counts still have to match
+        songmod.load_translation(s, 3)
+
+
+def test_english_align_records_a_repeat_for_the_translation(tmp_path):
+    from beatmv import __main__ as cli
+    from beatmv import repeats, suno_align
+
+    words = [_w("[Drop]\nUnder the lights", 1.0, 2.0), _w("\nHold on", 2.0, 3.0),
+             _w("\nUnder the lights", 5.0, 6.0), _w("\nHold on", 6.0, 7.0)]
+    subs = suno_align.words_to_ass(words)
+    txt = tmp_path / "lyrics.txt"
+    txt.write_text("Under the lights\nHold on\n", encoding="utf-8")
+    notes = cli.mark_english_repeats(subs, str(txt))
+    assert repeats.load(subs) == ([0, 1, 0, 1], 2)
+    assert len(notes) == 1 and "lines 3-4" in notes[0]
+    assert cli.mark_english_repeats(suno_align.words_to_ass(words[:2]), str(txt)) == [], "nothing sung again"

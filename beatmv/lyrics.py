@@ -30,6 +30,12 @@ def load_lines(ass_path, aligner):
     return load_lines_from(pysubs2.load(ass_path), aligner)
 
 
+def line_sources(ass_path):
+    """The written line of each subtitle line when Suno sang a block again (beatmv.repeats), or None."""
+    from beatmv import repeats
+    return repeats.load(pysubs2.load(ass_path))
+
+
 def load_lines_from(subs, aligner):
     """Same shape as load_lines, from an already loaded SSAFile."""
     out = []
