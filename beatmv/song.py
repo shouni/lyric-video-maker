@@ -109,11 +109,15 @@ def load(song_dir):
     )
 
 
-def load_translation(song, n_lines):
+def load_translation(song, n_lines, sources=None):
     """Read one translation row per subtitle line. Stop if the counts differ (a one-row offset would give
     every line another line's translation).
 
     An empty row means "no translation for this line" (e.g. a repeated fragment of the line before).
+
+    sources is the (written line per subtitle line, number of written lines) pair `align` stores when Suno sang
+    a block again (beatmv.repeats). Then a translation with one row per written line is accepted, and a
+    repeated line shows the translation of the line it repeats.
     """
     if not song.translation:
         return None
@@ -123,6 +127,10 @@ def load_translation(song, n_lines):
     if rows and rows[-1] == "":
         rows.pop()
     rows = [r.strip() for r in rows]
+    if len(rows) != n_lines and sources is not None:
+        lines_of, written = sources
+        if len(lines_of) == n_lines and len(rows) == written:
+            return [rows[i] for i in lines_of]
     if len(rows) != n_lines:
         raise ValueError(f"{song.translation}: {len(rows)} translation rows for {n_lines} subtitle lines. "
                          "Give exactly one row per line")

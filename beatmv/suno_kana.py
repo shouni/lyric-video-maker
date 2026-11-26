@@ -23,6 +23,7 @@ import re
 
 import pysubs2
 
+from beatmv import repeats
 from beatmv.suno_align import GAP_TOKEN, _TAG
 
 # A newline at the end of a word belongs to the previous line, which has no later word to time it by: each of
@@ -200,13 +201,26 @@ def lines_to_ass(display_lines, words):
     Raises ValueError listing every line that does not align (and when the line counts differ), so nothing is
     guessed. A character that starts more than GAP_WARN after the one before it is listed: on one song both
     such characters (the last kana of two verbs) were Suno placing the kana 1.2-1.5 s late, fixed by ear.
+
+    When Suno sang more lines than are written, a block it sang again (repeats.map_repeats) reuses the display
+    lines it repeats, and the mapping is stored in the ASS header so the translation follows.
     """
     sung = sung_lines(words)
     display = [ln.strip() for ln in display_lines if ln.strip()]
+    sources, warnings = None, []
     if len(display) != len(sung):
-        raise ValueError(f"{len(display)} display lines but Suno sang {len(sung)}. "
-                         "Make lyrics.txt one line per sung line")
-    subs, failed, warnings = pysubs2.SSAFile(), [], []
+        if len(display) < len(sung):
+            sources = repeats.map_repeats(len(display), len(sung),
+                                          lambda i, j: align_line(display[i], sung[j]) is not None)
+        if sources is None:
+            raise ValueError(f"{len(display)} display lines but Suno sang {len(sung)}. "
+                             "Make lyrics.txt one line per sung line")
+        warnings += repeats.describe(sources)
+        written = len(display)
+        display = [display[i] for i in sources]
+    subs, failed = pysubs2.SSAFile(), []
+    if sources is not None:
+        repeats.store(subs, sources, written)
     for no, (text, morae) in enumerate(zip(display, sung, strict=True), 1):
         segs = align_line(text, morae)
         if segs is None:

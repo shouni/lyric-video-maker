@@ -3,7 +3,7 @@ import argparse
 import json
 import os
 
-from beatmv import drums, lyrics, render, song as songmod, suno_align, suno_kana, thumbnail
+from beatmv import drums, lyrics, render, repeats, song as songmod, suno_align, suno_kana, thumbnail
 
 
 def main():
@@ -70,15 +70,18 @@ def main():
         lines = lyrics.load_lines(song.lyrics, song.lyrics_aligner)
         subs = lyrics.to_srt(lines, out)
         print(f"{out}  {len(subs)} lines")
-        trans = songmod.load_translation(song, len(lines))
+        trans = songmod.load_translation(song, len(lines), lyrics.line_sources(song.lyrics))
         if trans is not None:
             out = song.work(f"{song.slug}.ja.srt")
             subs = lyrics.to_srt([(tr or text, *rest) for tr, (text, *rest) in zip(trans, lines, strict=False)], out)
             print(f"{out}  {len(subs)} lines (translation)")
     elif args.cmd == "align" and song.lyrics_aligner == "suno":
         subs = suno_align.words_to_ass(suno_align.load_words(args.suno or song.work("suno_alignment.json")))
+        notes = mark_english_repeats(subs, args.lyrics or song.work("lyrics.txt"))
         subs.save(song.lyrics)
         print(f"{song.lyrics}  {len(subs)} lines (Suno word timings as they are)")
+        for n in notes:
+            print(f"  check: {n}")
     elif args.cmd == "align" and song.lyrics_aligner == "suno_kana":
         lyrics_in = args.lyrics or song.work("lyrics.txt")
         if not os.path.exists(lyrics_in):
@@ -114,6 +117,29 @@ def main():
         out = song.work("thumb_bg_portrait.png" if args.portrait else "thumb_bg.png")
         at = thumbnail.background(args.song_dir, out, args.portrait)
         print(f"{out}  t={at:.2f}")
+
+
+def mark_english_repeats(subs, lyrics_txt):
+    """For an English song, record which written line each sung line is when Suno sang a block again.
+
+    The subtitles are Suno's words as sung, so they need nothing; the mapping only lets a translation written
+    one row per lyrics.txt line follow the repeat (song.load_translation). Without lyrics.txt, or when the lines
+    cannot be explained as written lines plus repeats, nothing is stored and the translation must match the
+    sung lines as before.
+    """
+    if not os.path.exists(lyrics_txt):
+        return []
+    with open(lyrics_txt, encoding="utf-8") as f:
+        written = [repeats.normalise(ln) for ln in f.read().splitlines() if ln.strip()]
+    sung = [repeats.normalise(text) for text, *_ in lyrics.load_lines_from(subs, "suno")]
+    if len(sung) <= len(written):
+        return []
+    sources = repeats.map_repeats(len(written), len(sung), lambda i, j: written[i] == sung[j])
+    if sources is None:
+        return [f"{len(sung)} sung lines do not match the {len(written)} lines of {lyrics_txt} with repeats; "
+                "the translation needs one row per sung line"]
+    repeats.store(subs, sources, len(written))
+    return repeats.describe(sources)
 
 
 def run_whisper(song, out, args):

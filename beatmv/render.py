@@ -188,7 +188,7 @@ class Ctx:
         self.fade_out = song.fade_out if self.T1 >= song.duration else CLIP_FADE_OUT
 
         self.lines = lyr.load_lines(song.lyrics, song.lyrics_aligner)
-        self.translation = songmod.load_translation(song, len(self.lines))
+        self.translation = songmod.load_translation(song, len(self.lines), lyr.line_sources(song.lyrics))
         # spans where a hook line is sung (first character's start to last character's end), for the waveform colour
         self.hook_spans = [(segs[0][1], segs[-1][2]) for text, _, _, segs in self.lines if lyr.is_hook_line(text)]
         with open(song.beats) as f:
